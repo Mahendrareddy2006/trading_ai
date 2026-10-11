@@ -1,0 +1,19 @@
+services:
+  trading-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_ai_platform
+    ports:
+      - "8000:8000"
+    environment:
+      - TRADING_MODE=paper
+      - SAFE_KILL_SWITCH_ACTIVE=false
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATABASE_URL=sqlite:///./trading_ai.db
+    volumes:
+      - ./trading_ai/saved_models:/app/trading_ai/saved_models
+      - ./trading_ai/data:/app/trading_ai/data
+      - ./trading_ai.db:/app/trading_ai.db
+    restart: unless-stopped
