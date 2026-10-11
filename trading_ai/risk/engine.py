@@ -55,7 +55,7 @@ class RiskEngine:
         """Emergency kill switch to halt all new order generation."""
         self.kill_switch_active = active
         status = "ACTIVATED" if active else "DEACTIVATED"
-        logger.warning(f"🚨 KILL SWITCH {status}: {reason}")
+        logger.warning(f"[KILL SWITCH {status}]: {reason}")
 
     def update_equity_watermark(self, current_equity: float):
         """Updates high watermark and checks daily rollover."""
