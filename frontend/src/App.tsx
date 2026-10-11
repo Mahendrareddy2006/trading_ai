@@ -24,10 +24,14 @@ import { BacktestView } from './views/BacktestView';
 import { PortfolioRiskView } from './views/PortfolioRiskView';
 import { JournalView } from './views/JournalView';
 import { SettingsView } from './views/SettingsView';
+import { MarketNewsView } from './views/MarketNewsView';
+import { NotificationDrawer } from './components/NotificationDrawer';
 
 function MainApp() {
   const [currentTab, setCurrentTab] = useState<TabType>('overview');
   const [wsConnected, setWsConnected] = useState(false);
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   // Core Data State
   const [health, setHealth] = useState<SystemHealth | null>(null);
@@ -99,6 +103,24 @@ function MainApp() {
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  // Periodic unread notification count check
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await api.getUnreadNotificationCount();
+      if (res && typeof res.unread_count === 'number') {
+        setUnreadNotificationCount(res.unread_count);
+      }
+    } catch {
+      // Silently ignore if unauthenticated or offline
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 15000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadCount]);
 
   useEffect(() => {
     fetchCandles();
@@ -215,6 +237,8 @@ function MainApp() {
         riskStatus={riskStatus}
         wsConnected={wsConnected}
         onToggleKillSwitch={handleToggleKillSwitch}
+        unreadCount={unreadNotificationCount}
+        onOpenNotifications={() => setIsNotificationDrawerOpen(true)}
       />
 
       {/* Main View Container */}
@@ -231,7 +255,12 @@ function MainApp() {
             tickers={tickers}
             onClosePosition={handleClosePosition}
             onRefresh={loadInitialData}
+            onNavigateToNews={() => setCurrentTab('news')}
           />
+        )}
+
+        {currentTab === 'news' && (
+          <MarketNewsView tickers={tickers} />
         )}
 
         {currentTab === 'terminal' && (
@@ -305,6 +334,20 @@ function MainApp() {
 
       {/* Global Auth Modal */}
       <AuthModal />
+
+      {/* Persistent Notification Drawer */}
+      <NotificationDrawer
+        isOpen={isNotificationDrawerOpen}
+        onClose={() => {
+          setIsNotificationDrawerOpen(false);
+          fetchUnreadCount();
+        }}
+        onOpenSettings={() => {
+          setIsNotificationDrawerOpen(false);
+          setCurrentTab('settings');
+        }}
+        onUnreadCountChange={setUnreadNotificationCount}
+      />
 
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/80 py-4 text-xs font-mono text-slate-500">

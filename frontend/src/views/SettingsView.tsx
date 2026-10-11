@@ -19,25 +19,29 @@ import {
   EyeOff,
   Link2,
   Info,
-  ShieldAlert
+  ShieldAlert,
+  Bell
 } from 'lucide-react';
 import { SystemHealth, RiskStatus, SystemDataStatus, ExchangeConnectionRecord } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { NotificationCenterView } from './NotificationCenterView';
 
 interface SettingsViewProps {
   health: SystemHealth | null;
   riskStatus: RiskStatus | null;
   wsConnected: boolean;
+  initialTab?: 'notifications' | 'connections' | 'health' | 'risk';
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   health,
   riskStatus,
-  wsConnected
+  wsConnected,
+  initialTab = 'notifications'
 }) => {
   const { isAuthenticated, openLoginModal } = useAuth();
-  const [activeTab, setActiveTab] = useState<'connections' | 'health' | 'risk'>('connections');
+  const [activeTab, setActiveTab] = useState<'notifications' | 'connections' | 'health' | 'risk'>(initialTab);
   const [dataStatus, setDataStatus] = useState<SystemDataStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
 
@@ -150,6 +154,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* Tab Buttons */}
         <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
           <button
+            onClick={() => setActiveTab('notifications')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === 'notifications'
+                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-900/40'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Notification Center</span>
+          </button>
+          <button
             onClick={() => setActiveTab('connections')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab === 'connections'
@@ -199,6 +214,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-slate-200 text-xs">Dismiss</button>
         </div>
+      )}
+
+      {/* TAB 0: NOTIFICATION CENTER */}
+      {activeTab === 'notifications' && (
+        <NotificationCenterView />
       )}
 
       {/* TAB 1: EXCHANGE CONNECTIONS */}

@@ -2,6 +2,7 @@ export type TabType =
   | 'overview' 
   | 'terminal' 
   | 'market-detail'
+  | 'news'
   | 'models' 
   | 'training' 
   | 'backtest' 
@@ -272,5 +273,159 @@ export interface ExchangeConnectionRecord {
   error_message: string | null;
   created_at: string;
 }
+
+export interface NewsArticle {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  image_url: string | null;
+  summary: string;
+  published_at: string;
+  categories: string[];
+}
+
+export interface NewsFeedResponse {
+  status: string;
+  total: number;
+  count: number;
+  limit: number;
+  offset: number;
+  category: string;
+  categories: string[];
+  last_updated: string;
+  is_stale: boolean;
+  articles: NewsArticle[];
+}
+
+export interface NotificationSettings {
+  user_id: string;
+  telegram_enabled: boolean;
+  telegram_status: 'NOT_CONFIGURED' | 'VALIDATING' | 'CONNECTED' | 'INVALID_CREDENTIALS' | 'CONFIGURATION_ERROR' | 'PROVIDER_UNAVAILABLE' | string;
+  telegram_chat_id_masked: string | null;
+  telegram_has_custom_token: boolean;
+  telegram_verified: boolean;
+  telegram_verified_at: string | null;
+  telegram_sender_info: string | null;
+  telegram_last_delivery: string | null;
+  telegram_last_error: string | null;
+  server_telegram_configured: boolean;
+  telegram_chat_id?: string;
+  telegram_bot_token?: string;
+
+  whatsapp_enabled: boolean;
+  whatsapp_status: 'NOT_CONFIGURED' | 'VALIDATING' | 'CONNECTED' | 'INVALID_CREDENTIALS' | 'CONFIGURATION_ERROR' | 'PROVIDER_UNAVAILABLE' | string;
+  whatsapp_phone_number_masked: string | null;
+  whatsapp_phone_number_id_masked: string | null;
+  whatsapp_verified: boolean;
+  whatsapp_verified_at: string | null;
+  whatsapp_sender_info: string | null;
+  whatsapp_last_delivery: string | null;
+  whatsapp_last_error: string | null;
+  server_whatsapp_configured: boolean;
+  whatsapp_provider: string;
+  whatsapp_phone_number?: string;
+
+  in_app_enabled: boolean;
+  in_app_status: string;
+  in_app_verified_at: string | null;
+
+  all_coins: boolean;
+  selected_coins: string[];
+  available_symbols: string[];
+
+  ml_alerts_enabled: boolean;
+  ml_min_confidence: number;
+  ml_min_edge: number;
+  ml_notify_buy: boolean;
+  ml_notify_sell: boolean;
+  ml_notify_neutral: boolean;
+  ml_timeframes: string[];
+
+  news_alerts_enabled: boolean;
+  news_categories: string[];
+
+  risk_alerts_enabled: boolean;
+  notify_circuit_breaker: boolean;
+  notify_daily_loss: boolean;
+  notify_drawdown: boolean;
+  notify_consecutive_losses: boolean;
+  notify_service_health: boolean;
+
+  delivery_mode: string;
+  summary_frequency: string;
+  summary_time: string;
+  summary_timezone: string;
+  last_summary_sent_at: string | null;
+
+  env_writable?: boolean;
+  is_cloud?: boolean;
+  platform?: string;
+}
+
+export interface ConfigureWhatsAppPayload {
+  api_token: string;
+  phone_number_id: string;
+  recipient_phone?: string;
+  provider?: string;
+  save_to_local_env?: boolean;
+}
+
+export interface ConfigureTelegramPayload {
+  bot_token: string;
+  chat_id?: string;
+  save_to_local_env?: boolean;
+}
+
+export interface ChannelConfigureResponse {
+  status: string;
+  verified: boolean;
+  verified_at: string;
+  sender_info: string;
+  message: string;
+  env_updated: boolean;
+  env_message: string;
+}
+
+export interface PriceAlertRule {
+  id: string;
+  user_id: string;
+  symbol: string;
+  condition_type: 'entering_range' | 'exiting_range' | 'crossing_up' | 'crossing_down';
+  lower_boundary: number | null;
+  upper_boundary: number | null;
+  target_price: number | null;
+  channels: string;
+  is_active: boolean;
+  last_evaluated_price: number | null;
+  last_state: string | null;
+  last_triggered_at: string | null;
+  cooldown_seconds: number;
+  created_at: string;
+}
+
+export interface InAppNotification {
+  id: string;
+  title: string;
+  message: string;
+  category: 'ml_signal' | 'price_alert' | 'market_news' | 'risk_event' | 'system';
+  severity: 'info' | 'success' | 'warning' | 'critical';
+  symbol: string | null;
+  metadata: Record<string, any>;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface DeliveryLog {
+  id: string;
+  channel: string;
+  category: string;
+  status: string;
+  recipient: string;
+  error_message: string | null;
+  payload_preview: string | null;
+  created_at: string;
+}
+
 
 

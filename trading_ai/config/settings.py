@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = Field(default="", description="Telegram Chat ID")
     TELEGRAM_ENABLED: bool = Field(default=False, description="Enable telegram alerts")
 
+    # WhatsApp Alerting (Optional - Official Meta Cloud API or Twilio)
+    WHATSAPP_ENABLED: bool = Field(default=False, description="Enable WhatsApp alerts")
+    WHATSAPP_PROVIDER: str = Field(default="meta", description="WhatsApp provider: meta or twilio")
+    WHATSAPP_API_TOKEN: str = Field(default="", description="Meta WhatsApp Cloud API token or Twilio Auth Token")
+    WHATSAPP_PHONE_NUMBER_ID: str = Field(default="", description="Meta WhatsApp Business Phone Number ID")
+    WHATSAPP_FROM_NUMBER: str = Field(default="", description="Twilio WhatsApp sender number (e.g. whatsapp:+14155238886)")
+    WHATSAPP_TEMPLATE_NAME: str = Field(default="trading_alert", description="Pre-approved WhatsApp HSM template name")
+
+    # In-App Notifications
+    IN_APP_NOTIFICATIONS_ENABLED: bool = Field(default=True, description="Enable persistent in-app notifications")
+
     # Persistence
     DATABASE_URL: str = Field(default="sqlite:///./trading_ai.db", description="SQLAlchemy database URL")
 

@@ -24,7 +24,6 @@ from trading_ai.core.logging import get_logger
 from trading_ai.core.security import decrypt_credential
 from trading_ai.data.manager import data_manager
 from trading_ai.database.models import User, ExchangeCredential
-from trading_ai.database.session import init_db, get_db
 from trading_ai.execution.binance_client import binance_futures_client, BinanceFuturesClient
 from trading_ai.execution.paper import paper_engine
 from trading_ai.inference.predictor import model_predictor
@@ -35,6 +34,10 @@ from trading_ai.training.trainer import model_trainer, MODELS_DIR
 from trading_ai.api.auth import auth_router
 from trading_ai.api.exchange import exchange_router
 from trading_ai.api.watchlist import watchlist_router
+from trading_ai.api.news import news_router
+from trading_ai.api.notifications import notification_router
+from trading_ai.services.notification_service import notification_service
+from trading_ai.database.session import SessionLocal, init_db, get_db
 from trading_ai.api.deps import get_optional_current_user
 
 logger = get_logger("API")
@@ -58,6 +61,22 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(exchange_router)
 app.include_router(watchlist_router)
+app.include_router(news_router)
+app.include_router(notification_router)
+
+
+@app.get("/health", tags=["System"])
+@app.get("/api/health", tags=["System"])
+def health_check():
+    """Readiness and liveness probe for Render and external health checks."""
+    return {
+        "status": "healthy",
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "trading_mode": settings.TRADING_MODE,
+        "is_paper_trading": settings.is_paper_trading,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 ml_strategy = MLMultiTimeframeStrategy(
     edge_threshold=settings.ML_EDGE_THRESHOLD,
@@ -132,6 +151,14 @@ async def live_trading_loop():
                 # 2. Update paper engine positions with real current price
                 paper_engine.on_price_update(symbol, current_price)
 
+                # 2b. Evaluate Price-Range & Price-Crossing Alerts
+                try:
+                    db_sess = SessionLocal()
+                    notification_service.evaluate_price_alerts(db_sess, symbol, current_price)
+                    db_sess.close()
+                except Exception as e:
+                    logger.debug(f"Error evaluating price alerts for {symbol}: {e}")
+
                 # 3. Evaluate Strategy with live candles if flat
                 if symbol not in paper_engine.positions:
                     candles_1h = data_manager.get_live_candles(symbol, "1h", limit=100)
@@ -199,6 +226,38 @@ async def on_startup():
     logger.info("Database initialized successfully.")
     ensure_seed_models()
     asyncio.create_task(live_trading_loop())
+    asyncio.create_task(scheduled_notification_loop())
+
+
+async def scheduled_notification_loop():
+    """Background scheduler for hourly portfolio summaries and breaking news monitoring."""
+    from trading_ai.database.session import SessionLocal
+    from trading_ai.services.notification_service import notification_service
+    from trading_ai.services.news_service import news_service
+
+    logger.info("Started scheduled notification & news monitor loop (Hourly summaries + Breaking news alerts).")
+    await asyncio.sleep(5)
+
+    while True:
+        try:
+            db_session = SessionLocal()
+            try:
+                # 1. Hourly Summary Cadence Check & Dispatch
+                notification_service.run_scheduled_summaries(db_session)
+
+                # 2. News Ingestion & Real-Time Breaking News Multi-Channel Dispatch
+                articles = news_service.refresh_news(force=False)
+                if articles:
+                    notification_service.evaluate_news_articles(db_session, articles)
+            finally:
+                db_session.close()
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in scheduled notification background loop: {e}")
+
+        await asyncio.sleep(60)
 
 
 def ensure_seed_models():
@@ -535,6 +594,17 @@ def get_risk_status():
 @app.post("/api/risk/kill-switch")
 def toggle_kill_switch(req: KillSwitchRequest):
     risk_engine.toggle_kill_switch(req.active, reason=req.reason or "Dashboard toggle")
+    try:
+        db_sess = SessionLocal()
+        notification_service.dispatch_risk_alert(
+            db=db_sess,
+            event_type="kill_switch_toggled",
+            severity="critical" if req.active else "info",
+            details=f"Emergency kill switch was {'ENGAGED' if req.active else 'RELEASED'}. Reason: {req.reason or 'User action'}"
+        )
+        db_sess.close()
+    except Exception as e:
+        logger.error(f"Error dispatching kill switch alert: {e}")
     return {"kill_switch_active": risk_engine.kill_switch_active}
 
 

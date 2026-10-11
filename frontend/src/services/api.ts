@@ -14,15 +14,25 @@ import {
   SystemHealth,
   TickerData,
   Trade,
-  UserProfile
+  UserProfile,
+  NewsArticle,
+  NewsFeedResponse,
+  NotificationSettings,
+  PriceAlertRule,
+  InAppNotification,
+  DeliveryLog,
+  ConfigureWhatsAppPayload,
+  ConfigureTelegramPayload,
+  ChannelConfigureResponse
 } from '../types';
 
 export const getApiBaseUrl = (): string => {
   const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
   if (envUrl) {
-    return envUrl.replace(/\/$/, '');
+    const trimmed = envUrl.trim().replace(/\/$/, '');
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
   }
-  if (typeof window !== 'undefined' && window.location.origin.includes('localhost')) {
+  if (typeof window !== 'undefined' && (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1'))) {
     return 'http://127.0.0.1:8000/api';
   }
   return '/api';
@@ -321,5 +331,205 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to remove ${symbol} from watchlist`);
     const data = await res.json();
     return data.symbols || [];
+  },
+
+  // Market News Endpoints
+  async getNews(params?: {
+    category?: string;
+    search?: string;
+    source?: string;
+    limit?: number;
+    offset?: number;
+    refresh?: boolean;
+  }): Promise<NewsFeedResponse> {
+    const q = new URLSearchParams();
+    if (params?.category) q.append('category', params.category);
+    if (params?.search) q.append('search', params.search);
+    if (params?.source) q.append('source', params.source);
+    if (params?.limit !== undefined) q.append('limit', String(params.limit));
+    if (params?.offset !== undefined) q.append('offset', String(params.offset));
+    if (params?.refresh) q.append('refresh', 'true');
+
+    const res = await fetch(`${API_BASE}/news?${q.toString()}`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to fetch market news');
+    return res.json();
+  },
+
+  // Notification Center Endpoints
+  async getNotificationSettings(): Promise<NotificationSettings> {
+    const res = await fetch(`${API_BASE}/notifications/settings`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to fetch notification settings');
+    return res.json();
+  },
+
+  async updateNotificationSettings(data: Partial<NotificationSettings>): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/settings`, {
+      method: 'PUT',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update notification settings');
+    }
+    return res.json();
+  },
+
+  async testNotification(channel: string, data?: { token_override?: string; chat_id_override?: string; phone_override?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/test/${channel}`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(data || {})
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail?.message || err.detail || `Test alert failed for ${channel}`);
+    }
+    return res.json();
+  },
+
+  async configureWhatsApp(payload: ConfigureWhatsAppPayload): Promise<ChannelConfigureResponse> {
+    const res = await fetch(`${API_BASE}/notifications/channels/whatsapp/configure`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = typeof err.detail === 'object' ? err.detail.message || err.detail.error : err.detail;
+      throw new Error(msg || 'Failed to verify and configure WhatsApp credentials.');
+    }
+    return res.json();
+  },
+
+  async configureTelegram(payload: ConfigureTelegramPayload): Promise<ChannelConfigureResponse> {
+    const res = await fetch(`${API_BASE}/notifications/channels/telegram/configure`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = typeof err.detail === 'object' ? err.detail.message || err.detail.error : err.detail;
+      throw new Error(msg || 'Failed to verify and configure Telegram credentials.');
+    }
+    return res.json();
+  },
+
+  async getDeploymentContext(): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/deployment-context`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) return { platform: 'unknown', is_cloud: false, env_writable: false };
+    return res.json();
+  },
+
+  async getPriceRules(): Promise<PriceAlertRule[]> {
+    const res = await fetch(`${API_BASE}/notifications/price-rules`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to fetch price alert rules');
+    return res.json();
+  },
+
+  async createPriceRule(data: Partial<PriceAlertRule>): Promise<PriceAlertRule> {
+    const res = await fetch(`${API_BASE}/notifications/price-rules`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create price alert rule');
+    }
+    return res.json();
+  },
+
+  async updatePriceRule(ruleId: string, isActive: boolean): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/price-rules/${ruleId}?is_active=${isActive}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to update price rule');
+    return res.json();
+  },
+
+  async deletePriceRule(ruleId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/price-rules/${ruleId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to delete price rule');
+    return res.json();
+  },
+
+  async getInAppNotifications(params?: { category?: string; unread_only?: boolean; limit?: number; offset?: number }): Promise<{ total: number; count: number; notifications: InAppNotification[] }> {
+    const q = new URLSearchParams();
+    if (params?.category) q.append('category', params.category);
+    if (params?.unread_only) q.append('unread_only', 'true');
+    if (params?.limit !== undefined) q.append('limit', String(params.limit));
+    if (params?.offset !== undefined) q.append('offset', String(params.offset));
+
+    const res = await fetch(`${API_BASE}/notifications/in-app?${q.toString()}`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to fetch in-app notifications');
+    return res.json();
+  },
+
+  async getUnreadNotificationCount(): Promise<{ unread_count: number }> {
+    const res = await fetch(`${API_BASE}/notifications/in-app/unread-count`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to fetch unread notification count');
+    return res.json();
+  },
+
+  async markNotificationRead(id: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/in-app/${id}/read`, {
+      method: 'POST',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to mark notification as read');
+    return res.json();
+  },
+
+  async markAllNotificationsRead(): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/in-app/read-all`, {
+      method: 'POST',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to mark all notifications as read');
+    return res.json();
+  },
+
+  async deleteNotification(id: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/in-app/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to delete notification');
+    return res.json();
+  },
+
+  async getDeliveryHistory(limit = 30): Promise<DeliveryLog[]> {
+    const res = await fetch(`${API_BASE}/notifications/delivery-history?limit=${limit}`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to fetch delivery logs');
+    return res.json();
+  },
+
+  async triggerSummaryNow(): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/summary/trigger-now`, {
+      method: 'POST',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to trigger periodic summary');
+    return res.json();
   }
 };

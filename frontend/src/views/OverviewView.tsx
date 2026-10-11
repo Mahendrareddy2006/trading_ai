@@ -2,16 +2,17 @@ import React from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
-  DollarSign, 
   ShieldCheck, 
-  AlertTriangle, 
   Activity, 
   ArrowUpRight, 
   ArrowDownRight,
   RefreshCw,
-  XCircle
+  XCircle,
+  BrainCircuit,
+  SlidersHorizontal
 } from 'lucide-react';
 import { Position, Prediction, RiskStatus, Trade, TickerData } from '../types';
+import { LatestNewsWidget } from '../components/LatestNewsWidget';
 
 interface OverviewViewProps {
   cash: number;
@@ -24,6 +25,7 @@ interface OverviewViewProps {
   tickers: Record<string, TickerData>;
   onClosePosition: (symbol: string) => void;
   onRefresh: () => void;
+  onNavigateToNews?: () => void;
 }
 
 export const OverviewView: React.FC<OverviewViewProps> = ({
@@ -36,7 +38,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   trades,
   tickers,
   onClosePosition,
-  onRefresh
+  onRefresh,
+  onNavigateToNews = () => {}
 }) => {
   const latestPrediction = predictions[0] || null;
 
@@ -47,7 +50,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner / Ticker Strip with Real Live Exchange Data */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {(Object.keys(tickers).length >= 4 ? Object.keys(tickers).slice(0, 4) : ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']).map((sym) => {
           const pred = predictions.find((p) => p.symbol === sym);
           const t = tickers[sym];
@@ -56,19 +59,24 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           const isUp = change >= 0;
 
           return (
-            <div key={sym} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 backdrop-blur-sm shadow-md">
+            <div 
+              key={sym} 
+              className="bg-slate-900/70 border border-slate-800 hover:border-slate-700/80 rounded-xl p-3.5 backdrop-blur-sm shadow-md transition-all group"
+            >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-slate-200">{sym}</span>
+                <span className="text-xs font-mono font-bold text-slate-200 group-hover:text-cyan-400 transition-colors">
+                  {sym}
+                </span>
                 <span className={`text-[11px] font-mono font-bold flex items-center ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {isUp ? '+' : ''}{change.toFixed(2)}%
                 </span>
               </div>
 
-              <div className="mt-1 flex items-baseline justify-between">
-                <span className="text-base font-black font-mono text-slate-100">
+              <div className="mt-1.5 flex items-baseline justify-between">
+                <span className="text-base sm:text-lg font-black font-mono text-slate-100">
                   {price ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
                 </span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
                   pred?.direction === 'LONG' 
                     ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50' 
                     : pred?.direction === 'SHORT'
@@ -79,7 +87,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 </span>
               </div>
 
-              <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+              <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 font-mono">
                 <span>Vol: {t?.volume_24h ? t.volume_24h.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '--'}</span>
                 <span className="uppercase text-slate-400 font-semibold">{pred?.regime || 'LIVE'}</span>
               </div>
@@ -88,19 +96,19 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         })}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* KPI Cards: Institutional Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Equity */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Paper Account Equity</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/40">
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/40 font-bold">
               SIMULATED
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-100 font-mono">
+            <span className="text-2xl sm:text-3xl font-black text-slate-100 font-mono tracking-tight">
               ${equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
@@ -114,13 +122,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </div>
 
         {/* Available Cash */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Available Cash</span>
             <Activity className="w-4 h-4 text-indigo-400" />
           </div>
           <div className="mt-2">
-            <span className="text-2xl font-black text-slate-100 font-mono">
+            <span className="text-2xl sm:text-3xl font-black text-slate-100 font-mono tracking-tight">
               ${cash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
@@ -130,13 +138,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </div>
 
         {/* Unrealized PnL */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Unrealized P&L</span>
             {unrealizedPnl >= 0 ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-rose-400" />}
           </div>
           <div className="mt-2">
-            <span className={`text-2xl font-black font-mono ${unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tight ${unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(2)}
             </span>
           </div>
@@ -146,13 +154,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </div>
 
         {/* Realized PnL */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Realized P&L</span>
             <ShieldCheck className="w-4 h-4 text-amber-400" />
           </div>
           <div className="mt-2">
-            <span className={`text-2xl font-black font-mono ${realizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tight ${realizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)}
             </span>
           </div>
@@ -164,12 +172,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
       {/* Main Grid: Active Positions & Latest ML Signal */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Positions Table (2 Columns) */}
+        {/* Positions Table (2 Columns on large screens) */}
         <div className="lg:col-span-2 bg-slate-900/70 border border-slate-800 rounded-xl p-5 backdrop-blur-md shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-slate-100 text-sm tracking-wide">ACTIVE POSITIONS</h3>
-              <span className="px-2 py-0.5 text-xs font-mono rounded bg-slate-800 text-slate-300">
+              <span className="px-2 py-0.5 text-xs font-mono rounded bg-slate-800 text-slate-300 font-semibold">
                 {positions.length}
               </span>
             </div>
@@ -244,12 +252,15 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           )}
         </div>
 
-        {/* Latest ML Signal & Risk Status (1 Column) */}
+        {/* Latest ML Signal & Institutional Risk Card (1 Column) */}
         <div className="space-y-6">
           {/* Signal Card */}
           <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-5 backdrop-blur-md shadow-xl">
             <h3 className="font-bold text-slate-100 text-sm tracking-wide mb-3 flex items-center justify-between">
-              <span>LATEST ML PREDICTION</span>
+              <span className="flex items-center gap-1.5">
+                <BrainCircuit className="w-4 h-4 text-cyan-400" />
+                <span>LATEST ML PREDICTION</span>
+              </span>
               <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
                 1-HOUR MODEL
               </span>
@@ -306,7 +317,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
                 {latestPrediction.abstention_reason && (
                   <div className="p-2.5 rounded bg-amber-950/30 border border-amber-900/50 text-[11px] font-mono text-amber-300 flex items-center gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <SlidersHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>Filter: {latestPrediction.abstention_reason}</span>
                   </div>
                 )}
@@ -367,6 +378,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Dedicated Latest Market News & Intelligence Section */}
+      <LatestNewsWidget onNavigateToNews={onNavigateToNews} />
     </div>
   );
 };
+
+export default OverviewView;
