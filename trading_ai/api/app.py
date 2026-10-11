@@ -22,6 +22,7 @@ from trading_ai.core.events import event_bus
 from trading_ai.core.logging import get_logger
 from trading_ai.data.manager import data_manager
 from trading_ai.database.session import init_db
+from trading_ai.execution.binance_client import binance_futures_client
 from trading_ai.execution.paper import paper_engine
 from trading_ai.inference.predictor import model_predictor
 from trading_ai.risk.engine import risk_engine
@@ -373,6 +374,66 @@ def get_trades(limit: int = 50):
     trades = paper_engine.trades[-limit:]
     trades.reverse()
     return {"trades": trades}
+
+
+# ============================================================================
+# Authenticated Binance Exchange Account Endpoints (Read-Only)
+# ============================================================================
+@app.get("/api/account/summary")
+def get_exchange_account_summary():
+    """Returns actual Binance USD(S)-M Futures wallet balance, margin, and unrealized PnL."""
+    summary, err = binance_futures_client.get_account_summary()
+    return summary
+
+
+@app.get("/api/account/positions")
+def get_exchange_positions():
+    """Returns actual active open positions on Binance USD(S)-M Futures."""
+    positions, err = binance_futures_client.get_account_positions()
+    return {
+        "positions": positions,
+        "is_configured": binance_futures_client.is_configured,
+        "error": err
+    }
+
+
+@app.get("/api/account/open-orders")
+def get_exchange_open_orders(symbol: Optional[str] = None):
+    """Returns actual open orders on Binance Futures."""
+    orders, err = binance_futures_client.get_open_orders(symbol=symbol)
+    return {
+        "orders": orders,
+        "is_configured": binance_futures_client.is_configured,
+        "error": err
+    }
+
+
+@app.get("/api/account/trades")
+def get_exchange_user_trades(symbol: str = "BTCUSDT", limit: int = 50):
+    """Returns actual executed fills on Binance Futures."""
+    trades, err = binance_futures_client.get_user_trades(symbol=symbol, limit=limit)
+    return {
+        "trades": trades,
+        "is_configured": binance_futures_client.is_configured,
+        "error": err
+    }
+
+
+@app.get("/api/system/data-status")
+def get_system_data_status():
+    """Returns health of exchange connectivity, latency, and data streams."""
+    ping_info = binance_futures_client.get_server_ping()
+    return {
+        "exchange_connectivity": ping_info,
+        "credentials_configured": binance_futures_client.is_configured,
+        "active_symbols": settings.default_symbols,
+        "live_prices_cached": len(live_prices),
+        "testnet": binance_futures_client.testnet,
+        "server_time_offset_ms": binance_futures_client.time_offset_ms,
+        "trading_mode": settings.TRADING_MODE,
+        "is_paper_trading": settings.is_paper_trading,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
 @app.get("/api/risk/status")

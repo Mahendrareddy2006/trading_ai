@@ -4,15 +4,25 @@ Supports loading from environment variables, .env file, and safe defaults.
 Defaults to PAPER TRADING mode with strict risk safeguards.
 """
 
+from pathlib import Path
 from typing import List, Optional
 import os
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+# Canonical repository root directory
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
+# Explicitly load root .env into os.environ if it exists
+if ENV_FILE_PATH.exists():
+    load_dotenv(dotenv_path=ENV_FILE_PATH, override=False)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "trading_ai/.env"),
+        env_file=str(ENV_FILE_PATH) if ENV_FILE_PATH.exists() else ".env",
         env_file_encoding="utf-8",
         extra="ignore"
     )
@@ -33,7 +43,7 @@ class Settings(BaseSettings):
     # Binance Credentials (OPTIONAL for paper trading)
     BINANCE_API_KEY: str = Field(default="", description="Binance API Key")
     BINANCE_API_SECRET: str = Field(default="", description="Binance API Secret")
-    BINANCE_TESTNET: bool = Field(default=True, description="Whether to use Binance Futures Testnet")
+    BINANCE_TESTNET: bool = Field(default=False, description="Whether to use Binance Futures Testnet")
 
     # Telegram Alerting (Optional)
     TELEGRAM_BOT_TOKEN: str = Field(default="", description="Telegram Bot Token")
@@ -88,7 +98,7 @@ except Exception:
         INITIAL_PAPER_BALANCE = float(os.getenv("INITIAL_PAPER_BALANCE", 10000.0))
         BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
         BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
-        BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+        BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "false").lower() == "true"
         TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
         TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
         TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"

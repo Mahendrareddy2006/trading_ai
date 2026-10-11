@@ -1,10 +1,14 @@
 import {
   BacktestResult,
   Candle,
+  ExchangeAccountSummary,
+  ExchangeOrder,
+  ExchangePosition,
   ModelRecord,
   Position,
   Prediction,
   RiskStatus,
+  SystemDataStatus,
   SystemHealth,
   TickerData,
   Trade
@@ -136,6 +140,30 @@ export const api = {
       body: JSON.stringify({ active, reason })
     });
     if (!res.ok) throw new Error('Failed to toggle kill switch');
+    return res.json();
+  },
+
+  async getExchangeAccountSummary(): Promise<ExchangeAccountSummary> {
+    const res = await fetch(`${API_BASE}/account/summary`);
+    if (!res.ok) throw new Error('Failed to fetch exchange account summary');
+    return res.json();
+  },
+
+  async getExchangePositions(): Promise<{ positions: ExchangePosition[]; is_configured: boolean; error: string | null }> {
+    const res = await fetch(`${API_BASE}/account/positions`);
+    if (!res.ok) throw new Error('Failed to fetch exchange positions');
+    return res.json();
+  },
+
+  async getExchangeOpenOrders(): Promise<{ orders: ExchangeOrder[]; is_configured: boolean; error: string | null }> {
+    const res = await fetch(`${API_BASE}/account/open-orders`);
+    if (!res.ok) throw new Error('Failed to fetch exchange open orders');
+    return res.json();
+  },
+
+  async getSystemDataStatus(): Promise<SystemDataStatus> {
+    const res = await fetch(`${API_BASE}/system/data-status`);
+    if (!res.ok) throw new Error('Failed to fetch system data status');
     return res.json();
   }
 };

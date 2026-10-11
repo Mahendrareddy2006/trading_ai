@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, 
   ShieldCheck, 
@@ -9,9 +9,14 @@ import {
   CheckCircle2, 
   AlertTriangle,
   Cpu,
-  Layers
+  Layers,
+  Activity,
+  Globe,
+  Key,
+  RefreshCw
 } from 'lucide-react';
-import { SystemHealth, RiskStatus } from '../types';
+import { SystemHealth, RiskStatus, SystemDataStatus } from '../types';
+import { api } from '../services/api';
 
 interface SettingsViewProps {
   health: SystemHealth | null;
@@ -24,21 +29,121 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   riskStatus,
   wsConnected
 }) => {
+  const [dataStatus, setDataStatus] = useState<SystemDataStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(false);
+
+  const fetchStatus = async () => {
+    setLoadingStatus(true);
+    try {
+      const status = await api.getSystemDataStatus();
+      setDataStatus(status);
+    } catch (e) {
+      console.error('Failed to load system data status:', e);
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 backdrop-blur-md">
-        <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-          <SettingsIcon className="w-5 h-5 text-cyan-400" />
-          <span>SYSTEM HEALTH, ENVIRONMENT & SETTINGS</span>
-        </h2>
-        <p className="text-xs text-slate-400 mt-0.5">
-          System operational status, network connectivity, security credentials audit, and risk limit configurations.
-        </p>
+      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <SettingsIcon className="w-5 h-5 text-cyan-400" />
+            <span>SYSTEM HEALTH, ENVIRONMENT & SETTINGS</span>
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            System operational status, network connectivity, exchange latency audit, and risk limit configurations.
+          </p>
+        </div>
+
+        <button
+          onClick={fetchStatus}
+          disabled={loadingStatus}
+          className="px-3.5 py-2 rounded-lg text-xs font-mono text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 flex items-center gap-2 border border-slate-700 transition-all"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loadingStatus ? 'animate-spin text-cyan-400' : ''}`} />
+          <span>Refresh Health Metrics</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Service Connectivity & Nodes */}
+        {/* Real Exchange Connectivity */}
+        <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-5 backdrop-blur-md shadow-xl space-y-4">
+          <h3 className="font-bold text-slate-100 text-sm tracking-wide flex items-center gap-2">
+            <Globe className="w-4 h-4 text-cyan-400" />
+            <span>BINANCE USDⓈ-M FUTURES EXCHANGE LINK</span>
+          </h3>
+
+          <div className="space-y-3 font-mono text-xs">
+            {/* Exchange Endpoint */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/60 border border-slate-800">
+              <div>
+                <span className="font-bold text-slate-200">Official Endpoint</span>
+                <p className="text-[10px] text-slate-500">https://fapi.binance.com (Futures REST & WS)</p>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-400 border border-cyan-800/50">
+                {dataStatus?.exchange_connectivity?.exchange || 'BINANCE USDⓈ-M FUTURES'}
+              </span>
+            </div>
+
+            {/* Public Market Data Ping */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/60 border border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                <div>
+                  <span className="font-bold text-slate-200">Public Market Data Stream</span>
+                  <p className="text-[10px] text-slate-500">
+                    Live tickers: {dataStatus?.active_symbols ? dataStatus.active_symbols.join(', ') : 'BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT'}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800/50">
+                  {dataStatus?.exchange_connectivity?.status || 'CONNECTED'}
+                </span>
+                {dataStatus?.exchange_connectivity?.latency_ms !== undefined && (
+                  <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                    Latency: {dataStatus.exchange_connectivity.latency_ms.toFixed(1)}ms
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Read-Only Account Credential Status */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/60 border border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <Key className="w-4 h-4 text-amber-400" />
+                <div>
+                  <span className="font-bold text-slate-200">Authenticated Account API</span>
+                  <p className="text-[10px] text-slate-500">Local .env read-only credentials</p>
+                </div>
+              </div>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                dataStatus?.credentials_configured
+                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
+                  : 'bg-slate-800 text-slate-400 border border-slate-700'
+              }`}>
+                {dataStatus?.credentials_configured ? 'CONFIGURED & MASKED' : 'UNCONFIGURED (SAFE)'}
+              </span>
+            </div>
+
+            {/* Server Time Offset */}
+            {dataStatus?.server_time_offset_ms !== undefined && (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400">Server Time Synchronization Offset</span>
+                <span className="text-slate-200 font-bold">{dataStatus.server_time_offset_ms.toFixed(1)} ms</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Core Subsystem Status */}
         <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-5 backdrop-blur-md shadow-xl space-y-4">
           <h3 className="font-bold text-slate-100 text-sm tracking-wide flex items-center gap-2">
             <Server className="w-4 h-4 text-cyan-400" />
@@ -149,20 +254,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         {/* Configured Risk Limits */}
-        <div className="lg:col-span-2 bg-slate-900/70 border border-slate-800 rounded-xl p-5 backdrop-blur-md shadow-xl">
+        <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-5 backdrop-blur-md shadow-xl">
           <h3 className="font-bold text-slate-100 text-sm tracking-wide mb-3 flex items-center gap-2">
             <Layers className="w-4 h-4 text-cyan-400" />
             <span>CONFIGURED PARAMETER REGISTRY</span>
           </h3>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-mono text-xs">
+          <div className="grid grid-cols-2 gap-3 font-mono text-xs">
             <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
               <span className="text-slate-500 block text-[10px]">RISK PER TRADE</span>
               <span className="text-cyan-400 font-bold text-sm">1.0% Equity</span>
             </div>
             <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
               <span className="text-slate-500 block text-[10px]">MAX DAILY LOSS</span>
-              <span className="text-rose-400 font-bold text-sm">2.0% Circuit Breaker</span>
+              <span className="text-rose-400 font-bold text-sm">2.0% Circuit</span>
             </div>
             <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
               <span className="text-slate-500 block text-[10px]">MAX DRAWDOWN</span>
@@ -179,14 +284,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
               <span className="text-slate-500 block text-[10px]">SLIPPAGE MODEL</span>
               <span className="text-slate-200 font-bold text-sm">0.05% Adverse</span>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
-              <span className="text-slate-500 block text-[10px]">CALIBRATION METHOD</span>
-              <span className="text-indigo-400 font-bold text-sm">Platt Scaling</span>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
-              <span className="text-slate-500 block text-[10px]">MIN NOTIONAL</span>
-              <span className="text-slate-200 font-bold text-sm">$5.00 Threshold</span>
             </div>
           </div>
         </div>

@@ -94,20 +94,22 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Account Equity</span>
-            <DollarSign className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Paper Account Equity</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/40">
+              SIMULATED
+            </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-100 font-mono">
               ${equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs">
+          <div className="mt-2 flex items-center justify-between text-xs">
             <span className={totalReturnPct >= 0 ? 'text-emerald-400 flex items-center font-semibold' : 'text-rose-400 flex items-center font-semibold'}>
               {totalReturnPct >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
               {totalReturnPct.toFixed(2)}%
             </span>
-            <span className="text-slate-500">from initial $10,000</span>
+            <span className="text-[11px] text-slate-500 font-mono">Base: $10,000 Sandbox</span>
           </div>
         </div>
 

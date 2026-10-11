@@ -179,3 +179,135 @@ def test_fastapi_health():
     data = response.json()
     assert data["status"] == "healthy"
     assert "version" in data
+
+
+def test_binance_public_market_data():
+    """Verifies Binance Futures public market data client."""
+    from trading_ai.execution.binance_client import binance_futures_client
+
+    ping = binance_futures_client.get_server_ping()
+    assert "status" in ping
+    assert "latency_ms" in ping
+
+    tickers = binance_futures_client.get_realtime_tickers(["BTCUSDT"])
+    assert "BTCUSDT" in tickers
+    assert tickers["BTCUSDT"]["price"] > 0
+    assert "change_24h" in tickers["BTCUSDT"]
+
+
+def test_binance_unconfigured_and_placeholder_credentials():
+    """Verifies that empty or placeholder credentials are not recognized as configured."""
+    from trading_ai.execution.binance_client import BinanceFuturesClient
+
+    # Empty credentials
+    c_empty = BinanceFuturesClient(api_key="", api_secret="")
+    assert c_empty.is_configured is False
+    summary, err = c_empty.get_account_summary()
+    assert summary["is_configured"] is False
+    assert summary["status"] == "CREDENTIALS_NOT_CONFIGURED"
+
+    # Placeholder credentials
+    c_place = BinanceFuturesClient(api_key="your_actual_binance_api_key", api_secret="your_actual_secret_key")
+    assert c_place.is_configured is False
+
+
+def test_root_env_loading_and_propagation():
+    """Verifies that the canonical root .env loads reliably regardless of working directory."""
+    from trading_ai.config.settings import Settings, ENV_FILE_PATH, settings
+    from trading_ai.execution.binance_client import BinanceFuturesClient
+
+    assert ENV_FILE_PATH.exists()
+    s = Settings()
+    # Ensure paper trading mode is strictly preserved
+    assert s.is_paper_trading is True
+    assert s.TRADING_MODE.lower() == "paper"
+
+    # Ensure BinanceFuturesClient dynamically reflects settings
+    client = BinanceFuturesClient()
+    assert client.api_key == s.BINANCE_API_KEY.strip()
+    assert client.api_secret == s.BINANCE_API_SECRET.strip()
+    assert client.testnet == s.BINANCE_TESTNET
+
+
+def test_private_account_mocked_success(monkeypatch):
+    """Verifies that valid exchange responses are parsed correctly without fabricating data."""
+    from trading_ai.execution.binance_client import BinanceFuturesClient
+
+    mock_account_data = {
+        "totalWalletBalance": "15420.50",
+        "totalMarginBalance": "15450.20",
+        "totalUnrealizedProfit": "29.70",
+        "availableBalance": "14200.00",
+        "totalInitialMargin": "1250.20",
+        "totalMaintMargin": "62.50",
+        "assets": [
+            {
+                "asset": "USDT",
+                "walletBalance": "15420.50",
+                "unrealizedProfit": "29.70",
+                "marginBalance": "15450.20",
+                "availableBalance": "14200.00"
+            }
+        ]
+    }
+
+    client = BinanceFuturesClient(
+        api_key="a" * 32,
+        api_secret="b" * 32,
+        testnet=False
+    )
+    assert client.is_configured is True
+
+    # Monkeypatch _safe_request to simulate authenticated Binance response
+    monkeypatch.setattr(client, "_safe_request", lambda method, path, params=None, signed=False: (mock_account_data, None))
+
+    summary, err = client.get_account_summary()
+    assert err is None
+    assert summary["is_configured"] is True
+    assert summary["status"] == "CONNECTED"
+    assert summary["total_wallet_balance"] == 15420.50
+    assert summary["available_balance"] == 14200.00
+    assert summary["total_unrealized_pnl"] == 29.70
+    assert len(summary["assets"]) == 1
+    assert summary["assets"][0]["asset"] == "USDT"
+
+
+def test_private_account_mocked_error_2015(monkeypatch):
+    """Verifies that Binance error -2015 is handled gracefully with clear diagnostic messages."""
+    from trading_ai.execution.binance_client import BinanceFuturesClient
+
+    client = BinanceFuturesClient(
+        api_key="a" * 32,
+        api_secret="b" * 32,
+        testnet=False
+    )
+    assert client.is_configured is True
+
+    # Mock _safe_request returning error -2015
+    mock_err = "INVALID_API_KEY_OR_IP_RESTRICTION: Invalid API-key, IP, or permissions for action, request ip: 182.65.232.148"
+    monkeypatch.setattr(client, "_safe_request", lambda method, path, params=None, signed=False: (None, mock_err))
+
+    summary, err = client.get_account_summary()
+    assert err == mock_err
+    assert summary["is_configured"] is True
+    assert summary["status"] == "AUTH_FAILED"
+    assert "code: -2015" in summary["message"]
+    assert "Enable Reading" in summary["message"]
+    assert "IP restriction" in summary["message"]
+
+
+def test_secret_redaction_and_safety():
+    """Verifies that secrets are never exposed in API endpoint responses."""
+    client = TestClient(app)
+    from trading_ai.config.settings import settings
+
+    for endpoint in ["/api/account/summary", "/api/account/positions", "/api/system/data-status", "/api/health"]:
+        res = client.get(endpoint)
+        assert res.status_code == 200
+        text = res.text
+        # Neither raw secret nor raw key should ever be present in JSON payload
+        if settings.BINANCE_API_SECRET and len(settings.BINANCE_API_SECRET) > 8:
+            assert settings.BINANCE_API_SECRET not in text
+        if settings.BINANCE_API_KEY and len(settings.BINANCE_API_KEY) > 8:
+            assert settings.BINANCE_API_KEY not in text
+

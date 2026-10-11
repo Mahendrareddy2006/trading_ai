@@ -164,3 +164,72 @@ export interface SystemHealth {
   kill_switch: boolean;
   version: string;
 }
+
+export interface ExchangeAccountSummary {
+  is_configured: boolean;
+  status: string;
+  account_type?: string;
+  testnet?: boolean;
+  total_wallet_balance?: number;
+  total_margin_balance?: number;
+  total_unrealized_pnl?: number;
+  available_balance?: number;
+  total_initial_margin?: number;
+  total_maintenance_margin?: number;
+  assets?: Array<{
+    asset: string;
+    wallet_balance: number;
+    unrealized_profit: number;
+    margin_balance: number;
+    available_balance: number;
+  }>;
+  last_synced?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface ExchangePosition {
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  position_amount: number;
+  entry_price: number;
+  mark_price: number;
+  unrealized_pnl: number;
+  return_pct: number;
+  notional: number;
+  liquidation_price: number | null;
+  leverage: number;
+  margin_type: string;
+  isolated_margin: number;
+}
+
+export interface ExchangeOrder {
+  order_id: string;
+  symbol: string;
+  status: string;
+  side: string;
+  type: string;
+  price: number;
+  quantity: number;
+  executed_quantity: number;
+  time: string;
+}
+
+export interface SystemDataStatus {
+  exchange_connectivity: {
+    status: string;
+    latency_ms: number;
+    exchange: string;
+    testnet: boolean;
+    last_checked: string;
+  };
+  credentials_configured: boolean;
+  active_symbols: string[];
+  live_prices_cached: number;
+  testnet: boolean;
+  server_time_offset_ms: number;
+  trading_mode: string;
+  is_paper_trading: boolean;
+  timestamp: string;
+}
+
