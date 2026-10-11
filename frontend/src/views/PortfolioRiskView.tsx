@@ -340,21 +340,21 @@ export const PortfolioRiskView: React.FC<PortfolioRiskViewProps> = ({
                   </ul>
                 </div>
 
-                {/* Step 2: Configure Local .env */}
+                {/* Step 2: Configure in Settings */}
                 <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3 text-xs">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold font-mono">
                     <ShieldCheck className="w-4 h-4" />
-                    <span>STEP 2: Add to Local .env File</span>
+                    <span>STEP 2: Connect in Settings → Exchange Connections</span>
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    Open or create the file <code className="text-slate-200">.env</code> in your project root directory and add:
+                    Navigate to <strong className="text-slate-200">Settings → Exchange Connections</strong> in this web dashboard and submit your read-only Binance API Key and Secret.
                   </p>
-                  <pre className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-cyan-300 select-all overflow-x-auto">
-{`BINANCE_API_KEY=your_actual_binance_api_key
-BINANCE_API_SECRET=your_actual_binance_secret_key`}
-                  </pre>
+                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-cyan-300">
+                    <p className="text-emerald-400 font-semibold mb-1">✓ End-to-End Encryption at Rest</p>
+                    <p className="text-slate-400">Credentials are encrypted on the server with AES-256-GCM. Never shared, logged, or stored in frontend browser storage.</p>
+                  </div>
                   <p className="text-[10px] text-slate-500">
-                    Note: <code>.env</code> is git-ignored and never committed or shared. Secrets are stored exclusively on your local machine and never logged or sent to the browser.
+                    Local developers may alternatively configure <code>BINANCE_API_KEY</code> and <code>BINANCE_API_SECRET</code> in the root <code>.env</code>.
                   </p>
                 </div>
               </div>

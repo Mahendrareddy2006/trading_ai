@@ -12,22 +12,30 @@ from datetime import datetime, timezone
 import json
 import os
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from trading_ai.config.settings import settings
 from trading_ai.core.events import event_bus
 from trading_ai.core.logging import get_logger
+from trading_ai.core.security import decrypt_credential
 from trading_ai.data.manager import data_manager
-from trading_ai.database.session import init_db
-from trading_ai.execution.binance_client import binance_futures_client
+from trading_ai.database.models import User, ExchangeCredential
+from trading_ai.database.session import init_db, get_db
+from trading_ai.execution.binance_client import binance_futures_client, BinanceFuturesClient
 from trading_ai.execution.paper import paper_engine
 from trading_ai.inference.predictor import model_predictor
 from trading_ai.risk.engine import risk_engine
 from trading_ai.strategies.ml_strategy import MLMultiTimeframeStrategy
 from trading_ai.training.trainer import model_trainer, MODELS_DIR
+
+from trading_ai.api.auth import auth_router
+from trading_ai.api.exchange import exchange_router
+from trading_ai.api.watchlist import watchlist_router
+from trading_ai.api.deps import get_optional_current_user
 
 logger = get_logger("API")
 
@@ -37,14 +45,19 @@ app = FastAPI(
     description="Advanced AI Cryptocurrency Trading Research & Paper-Trading Platform"
 )
 
-# CORS Middleware
+# CORS Middleware with explicit origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount Routers
+app.include_router(auth_router)
+app.include_router(exchange_router)
+app.include_router(watchlist_router)
 
 ml_strategy = MLMultiTimeframeStrategy(
     edge_threshold=settings.ML_EDGE_THRESHOLD,
@@ -151,16 +164,25 @@ async def live_trading_loop():
                 t_stat = live_ticker_stats.get(symbol, {})
                 await event_bus.emit("TICK", {
                     "symbol": symbol,
+                    "market_type": t_stat.get("market_type", "USDⓈ-M Perp"),
                     "price": current_price,
                     "change_24h": t_stat.get("change_24h", 0.0),
+                    "change_24h_abs": t_stat.get("change_24h_abs", 0.0),
                     "high_24h": t_stat.get("high_24h", current_price),
                     "low_24h": t_stat.get("low_24h", current_price),
                     "volume_24h": t_stat.get("volume_24h", 0.0),
+                    "quote_volume_24h": t_stat.get("quote_volume_24h", 0.0),
+                    "mark_price": t_stat.get("mark_price", current_price),
+                    "funding_rate": t_stat.get("funding_rate", 0.0),
+                    "bid_price": t_stat.get("bid_price", current_price),
+                    "ask_price": t_stat.get("ask_price", current_price),
+                    "spread": t_stat.get("spread", 0.0),
                     "equity": round(paper_engine.equity, 2),
                     "cash": round(paper_engine.cash, 2),
                     "unrealized_pnl": round(paper_engine.unrealized_pnl, 2),
                     "open_positions": len(paper_engine.positions),
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "is_stale": False
                 })
 
             await asyncio.sleep(2)
@@ -379,42 +401,111 @@ def get_trades(limit: int = 50):
 # ============================================================================
 # Authenticated Binance Exchange Account Endpoints (Read-Only)
 # ============================================================================
+def get_user_exchange_client(user: Optional[User], db: Session) -> Tuple[BinanceFuturesClient, Optional[ExchangeCredential]]:
+    """Resolves authenticated user's encrypted credentials; prevents cross-user exposure."""
+    if user:
+        cred = db.query(ExchangeCredential).filter(
+            ExchangeCredential.user_id == user.id,
+            ExchangeCredential.exchange_name == "binance",
+            ExchangeCredential.is_active == True
+        ).first()
+        if cred:
+            try:
+                key = decrypt_credential(cred.encrypted_api_key)
+                secret = decrypt_credential(cred.encrypted_api_secret)
+                client = BinanceFuturesClient(api_key=key, api_secret=secret, testnet=cred.is_testnet)
+                return client, cred
+            except Exception as e:
+                logger.error(f"Failed to decrypt user exchange credentials: {e}")
+                return BinanceFuturesClient(api_key="", api_secret=""), None
+        # User is admin without credentials in DB, allow root .env dev fallback
+        if user.is_superuser and binance_futures_client.is_configured:
+            return binance_futures_client, None
+        return BinanceFuturesClient(api_key="", api_secret=""), None
+
+    # Unauthenticated: if admin dev mode with root .env, return root client
+    return binance_futures_client, None
+
+
 @app.get("/api/account/summary")
-def get_exchange_account_summary():
+def get_exchange_account_summary(
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
     """Returns actual Binance USD(S)-M Futures wallet balance, margin, and unrealized PnL."""
-    summary, err = binance_futures_client.get_account_summary()
+    client, cred = get_user_exchange_client(user, db)
+    if not client.is_configured:
+        return {
+            "is_configured": False,
+            "status": "NOT_CONNECTED",
+            "message": "No exchange account connected. Go to Settings -> Exchange Connections to connect your read-only Binance API key.",
+            "account_type": "Binance USD(S)-M Futures",
+            "testnet": client.testnet
+        }
+    summary, err = client.get_account_summary()
+    if cred:
+        if err is None and summary.get("status") == "CONNECTED":
+            cred.last_sync_at = datetime.now(timezone.utc)
+            cred.status = "CONNECTED"
+            cred.error_message = None
+            db.commit()
+        elif err or summary.get("status") in ["AUTH_FAILED", "PERMISSION_DENIED", "IP_RESTRICTED"]:
+            cred.status = summary.get("status", "AUTH_FAILED")
+            cred.error_message = str(summary.get("error") or err)
+            db.commit()
     return summary
 
 
 @app.get("/api/account/positions")
-def get_exchange_positions():
+def get_exchange_positions(
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
     """Returns actual active open positions on Binance USD(S)-M Futures."""
-    positions, err = binance_futures_client.get_account_positions()
+    client, _ = get_user_exchange_client(user, db)
+    if not client.is_configured:
+        return {"positions": [], "is_configured": False, "error": None}
+    positions, err = client.get_account_positions()
     return {
         "positions": positions,
-        "is_configured": binance_futures_client.is_configured,
+        "is_configured": True,
         "error": err
     }
 
 
 @app.get("/api/account/open-orders")
-def get_exchange_open_orders(symbol: Optional[str] = None):
+def get_exchange_open_orders(
+    symbol: Optional[str] = None,
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
     """Returns actual open orders on Binance Futures."""
-    orders, err = binance_futures_client.get_open_orders(symbol=symbol)
+    client, _ = get_user_exchange_client(user, db)
+    if not client.is_configured:
+        return {"orders": [], "is_configured": False, "error": None}
+    orders, err = client.get_open_orders(symbol=symbol)
     return {
         "orders": orders,
-        "is_configured": binance_futures_client.is_configured,
+        "is_configured": True,
         "error": err
     }
 
 
 @app.get("/api/account/trades")
-def get_exchange_user_trades(symbol: str = "BTCUSDT", limit: int = 50):
+def get_exchange_user_trades(
+    symbol: str = "BTCUSDT",
+    limit: int = 50,
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
     """Returns actual executed fills on Binance Futures."""
-    trades, err = binance_futures_client.get_user_trades(symbol=symbol, limit=limit)
+    client, _ = get_user_exchange_client(user, db)
+    if not client.is_configured:
+        return {"trades": [], "is_configured": False, "error": None}
+    trades, err = client.get_user_trades(symbol=symbol, limit=limit)
     return {
         "trades": trades,
-        "is_configured": binance_futures_client.is_configured,
+        "is_configured": True,
         "error": err
     }
 

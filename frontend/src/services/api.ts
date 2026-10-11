@@ -1,7 +1,9 @@
 import {
+  AuthResponse,
   BacktestResult,
   Candle,
   ExchangeAccountSummary,
+  ExchangeConnectionRecord,
   ExchangeOrder,
   ExchangePosition,
   ModelRecord,
@@ -11,12 +13,37 @@ import {
   SystemDataStatus,
   SystemHealth,
   TickerData,
-  Trade
+  Trade,
+  UserProfile
 } from '../types';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+export const getApiBaseUrl = (): string => {
+  const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+  if (envUrl) {
+    return envUrl.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location.origin.includes('localhost')) {
+    return 'http://127.0.0.1:8000/api';
+  }
+  return '/api';
+};
+
+const API_BASE = getApiBaseUrl();
+
+export function getAuthHeaders(includeContentType = true): HeadersInit {
+  const headers: Record<string, string> = {};
+  if (includeContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const token = typeof window !== 'undefined' ? localStorage.getItem('trading_ai_token') : null;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 export const api = {
+  // System & Health
   async getHealth(): Promise<SystemHealth> {
     const res = await fetch(`${API_BASE}/health`);
     if (!res.ok) throw new Error('Health check failed');
@@ -73,7 +100,7 @@ export const api = {
   }): Promise<{ status: string; job_id: string }> {
     const res = await fetch(`${API_BASE}/training/start`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(true),
       body: JSON.stringify(params)
     });
     if (!res.ok) throw new Error('Failed to start training');
@@ -91,7 +118,7 @@ export const api = {
   }): Promise<BacktestResult> {
     const res = await fetch(`${API_BASE}/backtest/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(true),
       body: JSON.stringify(params)
     });
     if (!res.ok) {
@@ -114,7 +141,8 @@ export const api = {
 
   async closePosition(symbol: string): Promise<any> {
     const res = await fetch(`${API_BASE}/positions/${symbol}/close`, {
-      method: 'POST'
+      method: 'POST',
+      headers: getAuthHeaders(false)
     });
     if (!res.ok) throw new Error(`Failed to close position for ${symbol}`);
     return res.json();
@@ -136,27 +164,34 @@ export const api = {
   async toggleKillSwitch(active: boolean, reason?: string): Promise<{ kill_switch_active: boolean }> {
     const res = await fetch(`${API_BASE}/risk/kill-switch`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(true),
       body: JSON.stringify({ active, reason })
     });
     if (!res.ok) throw new Error('Failed to toggle kill switch');
     return res.json();
   },
 
+  // Exchange Read-Only Account Endpoints (Scoped to authenticated user)
   async getExchangeAccountSummary(): Promise<ExchangeAccountSummary> {
-    const res = await fetch(`${API_BASE}/account/summary`);
+    const res = await fetch(`${API_BASE}/account/summary`, {
+      headers: getAuthHeaders(false)
+    });
     if (!res.ok) throw new Error('Failed to fetch exchange account summary');
     return res.json();
   },
 
   async getExchangePositions(): Promise<{ positions: ExchangePosition[]; is_configured: boolean; error: string | null }> {
-    const res = await fetch(`${API_BASE}/account/positions`);
+    const res = await fetch(`${API_BASE}/account/positions`, {
+      headers: getAuthHeaders(false)
+    });
     if (!res.ok) throw new Error('Failed to fetch exchange positions');
     return res.json();
   },
 
   async getExchangeOpenOrders(): Promise<{ orders: ExchangeOrder[]; is_configured: boolean; error: string | null }> {
-    const res = await fetch(`${API_BASE}/account/open-orders`);
+    const res = await fetch(`${API_BASE}/account/open-orders`, {
+      headers: getAuthHeaders(false)
+    });
     if (!res.ok) throw new Error('Failed to fetch exchange open orders');
     return res.json();
   },
@@ -165,5 +200,126 @@ export const api = {
     const res = await fetch(`${API_BASE}/system/data-status`);
     if (!res.ok) throw new Error('Failed to fetch system data status');
     return res.json();
+  },
+
+  // Authentication Endpoints
+  async login(usernameOrEmail: string, password: string): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username_or_email: usernameOrEmail, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Authentication failed' }));
+      throw new Error(err.detail || 'Invalid username or password');
+    }
+    return res.json();
+  },
+
+  async register(username: string, email: string, password: string): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Registration failed' }));
+      throw new Error(err.detail || 'Registration failed');
+    }
+    return res.json();
+  },
+
+  async getMe(): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Session expired or unauthorized');
+    return res.json();
+  },
+
+  async logout(): Promise<void> {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      headers: getAuthHeaders(false)
+    }).catch(() => {});
+  },
+
+  // Exchange Connection Management (User-Scoped)
+  async getExchangeConnections(): Promise<ExchangeConnectionRecord[]> {
+    const res = await fetch(`${API_BASE}/exchange/connections`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) {
+      if (res.status === 401) return [];
+      throw new Error('Failed to fetch exchange connections');
+    }
+    const data = await res.json();
+    return data.connections || [];
+  },
+
+  async connectExchange(payload: {
+    exchange?: string;
+    label?: string;
+    api_key: string;
+    api_secret: string;
+    testnet?: boolean;
+  }): Promise<{ status: string; connection_id: string; message: string }> {
+    const res = await fetch(`${API_BASE}/exchange/connect`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to connect exchange' }));
+      throw new Error(err.detail || 'Connection validation failed');
+    }
+    return res.json();
+  },
+
+  async deleteExchangeConnection(connectionId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/exchange/connections/${connectionId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to remove exchange connection');
+  },
+
+  async syncExchangeConnection(connectionId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/exchange/connections/${connectionId}/sync`, {
+      method: 'POST',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error('Failed to synchronize exchange credentials');
+    return res.json();
+  },
+
+  // User Watchlist & Favorites
+  async getWatchlist(): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/watchlist`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.symbols || [];
+  },
+
+  async addToWatchlist(symbol: string): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/watchlist/${symbol}`, {
+      method: 'POST',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error(`Failed to add ${symbol} to watchlist`);
+    const data = await res.json();
+    return data.symbols || [];
+  },
+
+  async removeFromWatchlist(symbol: string): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/watchlist/${symbol}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error(`Failed to remove ${symbol} from watchlist`);
+    const data = await res.json();
+    return data.symbols || [];
   }
 };

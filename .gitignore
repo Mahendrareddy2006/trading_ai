@@ -48,6 +48,7 @@ state/
 logs/
 *.log
 scratch/
+trading_ai/saved_models/TESTUSDT_*
 .pytest_cache/
 .coverage
 htmlcov/

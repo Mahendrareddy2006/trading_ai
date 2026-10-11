@@ -151,33 +151,82 @@ class DataManager:
         return merged, new_count
 
     def fetch_realtime_tickers(self, symbols: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
-        """Fetches real-time price, 24h change %, 24h high/low, and volume directly from Binance."""
-        target_symbols = set(symbols or ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"])
-        endpoints = [
-            f"{self.base_url}/ticker/24hr",
-            "https://api.binance.com/api/v3/ticker/24hr"
-        ]
-        for url in endpoints:
-            try:
-                resp = requests.get(url, timeout=5)
-                if resp.status_code == 200:
-                    raw = resp.json()
-                    out = {}
-                    for item in raw:
-                        s = item.get("symbol")
-                        if s in target_symbols:
-                            out[s] = {
-                                "price": float(item.get("lastPrice") or item.get("price", 0.0)),
-                                "change_24h": round(float(item.get("priceChangePercent", 0.0)), 2),
-                                "high_24h": float(item.get("highPrice", 0.0)),
-                                "low_24h": float(item.get("lowPrice", 0.0)),
-                                "volume_24h": round(float(item.get("volume", 0.0)), 2)
-                            }
-                    if out:
-                        return out
-            except Exception as e:
-                logger.warning(f"Failed to fetch ticker from {url}: {e}")
-        return {}
+        """Fetches comprehensive real-time price, 24h change, mark price, funding rate, and spread."""
+        from trading_ai.config.settings import settings
+        target_symbols = set(symbols or settings.default_symbols)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        out: Dict[str, Dict[str, Any]] = {}
+
+        try:
+            # 1. Fetch 24hr ticker data
+            ticker_url = f"{self.base_url}/ticker/24hr"
+            resp = requests.get(ticker_url, timeout=5)
+            if resp.status_code == 200:
+                for item in resp.json():
+                    s = item.get("symbol")
+                    if s in target_symbols:
+                        last_price = float(item.get("lastPrice") or 0.0)
+                        high_price = float(item.get("highPrice") or 0.0)
+                        low_price = float(item.get("lowPrice") or 0.0)
+                        change_pct = round(float(item.get("priceChangePercent") or 0.0), 2)
+                        change_abs = round(float(item.get("priceChange") or 0.0), 4)
+                        vol_base = round(float(item.get("volume") or 0.0), 2)
+                        vol_quote = round(float(item.get("quoteVolume") or 0.0), 2)
+
+                        out[s] = {
+                            "symbol": s,
+                            "market_type": "USDⓈ-M Perp",
+                            "price": last_price,
+                            "change_24h": change_pct,
+                            "change_24h_abs": change_abs,
+                            "high_24h": high_price,
+                            "low_24h": low_price,
+                            "volume_24h": vol_base,
+                            "quote_volume_24h": vol_quote,
+                            "mark_price": last_price,
+                            "funding_rate": 0.0,
+                            "bid_price": last_price,
+                            "ask_price": last_price,
+                            "spread": 0.0,
+                            "timestamp": now_iso,
+                            "is_stale": False
+                        }
+        except Exception as e:
+            logger.warning(f"Failed to fetch 24hr tickers: {e}")
+
+        # 2. Fetch mark price and funding rates
+        try:
+            premium_url = f"{self.base_url}/premiumIndex"
+            resp = requests.get(premium_url, timeout=5)
+            if resp.status_code == 200:
+                for item in resp.json():
+                    s = item.get("symbol")
+                    if s in out:
+                        if item.get("markPrice"):
+                            out[s]["mark_price"] = float(item["markPrice"])
+                        if item.get("lastFundingRate"):
+                            out[s]["funding_rate"] = round(float(item["lastFundingRate"]) * 100, 4)
+        except Exception as e:
+            logger.warning(f"Failed to fetch premiumIndex: {e}")
+
+        # 3. Fetch book ticker for real-time bid/ask spread
+        try:
+            book_url = f"{self.base_url}/ticker/bookTicker"
+            resp = requests.get(book_url, timeout=5)
+            if resp.status_code == 200:
+                for item in resp.json():
+                    s = item.get("symbol")
+                    if s in out:
+                        bid = float(item.get("bidPrice") or 0.0)
+                        ask = float(item.get("askPrice") or 0.0)
+                        if bid > 0 and ask > 0:
+                            out[s]["bid_price"] = bid
+                            out[s]["ask_price"] = ask
+                            out[s]["spread"] = round(ask - bid, 4)
+        except Exception as e:
+            logger.warning(f"Failed to fetch bookTicker: {e}")
+
+        return out
 
     def get_live_candles(
         self,

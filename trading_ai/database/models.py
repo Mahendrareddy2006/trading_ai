@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 import json
 from typing import Any, Dict, Optional
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, Text, Index
+    Column, Integer, String, Float, Boolean, DateTime, Text, Index, ForeignKey
 )
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -173,3 +173,60 @@ class RiskEvent(Base):
     severity = Column(String(20), default="WARNING")  # INFO, WARNING, CRITICAL
     details = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+# ============================================================================
+# Multi-User Authentication & Exchange Credential Isolation Models
+# ============================================================================
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    last_login = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    credentials = relationship("ExchangeCredential", back_populates="user", cascade="all, delete-orphan")
+    watchlists = relationship("UserWatchlist", back_populates="user", cascade="all, delete-orphan")
+
+
+class ExchangeCredential(Base):
+    __tablename__ = "exchange_credentials"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    exchange = Column(String(30), default="binance_futures", nullable=False)
+    label = Column(String(50), default="Binance USD(S)-M Futures", nullable=False)
+    encrypted_api_key = Column(Text, nullable=False)
+    encrypted_api_secret = Column(Text, nullable=False)
+    key_mask = Column(String(20), nullable=False)  # e.g., "abcd****1234"
+    testnet = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    status = Column(String(30), default="NOT_CONNECTED")  # NOT_CONNECTED, VALIDATING, CONNECTED, AUTH_FAILED
+    last_error = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now)
+
+    user = relationship("User", back_populates="credentials")
+
+
+class UserWatchlist(Base):
+    __tablename__ = "user_watchlists"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    __table_args__ = (
+        Index("idx_user_symbol_watchlist", "user_id", "symbol", unique=True),
+    )
+
+    user = relationship("User", back_populates="watchlists")

@@ -1,6 +1,7 @@
 export type TabType = 
   | 'overview' 
   | 'terminal' 
+  | 'market-detail'
   | 'models' 
   | 'training' 
   | 'backtest' 
@@ -9,11 +10,22 @@ export type TabType =
   | 'settings';
 
 export interface TickerData {
+  symbol?: string;
+  market_type?: string;
   price: number;
   change_24h: number;
+  change_24h_abs?: number;
   high_24h: number;
   low_24h: number;
   volume_24h: number;
+  quote_volume_24h?: number;
+  mark_price?: number;
+  funding_rate?: number;
+  bid_price?: number;
+  ask_price?: number;
+  spread?: number;
+  timestamp?: string;
+  is_stale?: boolean;
 }
 
 export interface Candle {
@@ -232,4 +244,33 @@ export interface SystemDataStatus {
   is_paper_trading: boolean;
   timestamp: string;
 }
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  username: string;
+  is_superuser: boolean;
+  created_at: string;
+  last_login: string | null;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  expires_in_minutes: number;
+  user: UserProfile;
+}
+
+export interface ExchangeConnectionRecord {
+  id: string;
+  exchange_name: string;
+  label: string;
+  api_key_masked: string;
+  is_testnet: boolean;
+  status: string;
+  last_sync_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
 

@@ -48,7 +48,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     <div className="space-y-6">
       {/* Top Banner / Ticker Strip with Real Live Exchange Data */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'].map((sym) => {
+        {(Object.keys(tickers).length >= 4 ? Object.keys(tickers).slice(0, 4) : ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']).map((sym) => {
           const pred = predictions.find((p) => p.symbol === sym);
           const t = tickers[sym];
           const price = t?.price;

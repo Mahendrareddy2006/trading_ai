@@ -62,8 +62,20 @@ class Settings(BaseSettings):
     COOLDOWN_MINUTES: int = Field(default=15, description="Cooldown duration after loss/circuit breaker")
     MAX_OPEN_POSITIONS: int = Field(default=3, description="Max concurrent open positions")
 
-    # Strategy & Machine Learning Defaults
-    DEFAULT_SYMBOLS_STR: str = "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT"
+    # Security, Authentication & Secret Encryption
+    SECRET_KEY: str = Field(default="trading-ai-secure-default-jwt-secret-key-change-in-production", description="JWT secret key")
+    ENCRYPTION_MASTER_KEY: str = Field(default="", description="Master encryption key for user credentials at rest")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, description="Session expiration in minutes (default 24h)")
+    ALLOW_PUBLIC_SIGNUP: bool = Field(default=False, description="Strictly disabled by default for private access")
+    INITIAL_ADMIN_EMAIL: str = Field(default="admin@tradingai.local", description="Initial provisioned admin account")
+    INITIAL_ADMIN_PASSWORD: str = Field(default="AdminPassword123!", description="Initial provisioned admin password")
+
+    # Strategy & Machine Learning Defaults (20 Top USDⓈ-M Futures Pairs)
+    DEFAULT_SYMBOLS_STR: str = (
+        "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,DOGEUSDT,ADAUSDT,AVAXUSDT,"
+        "LINKUSDT,DOTUSDT,LTCUSDT,BCHUSDT,TRXUSDT,ARBUSDT,SUIUSDT,APTUSDT,"
+        "NEARUSDT,UNIUSDT,ETCUSDT,FILUSDT"
+    )
     ENTRY_TIMEFRAME: str = "5m"
     DIRECTION_TIMEFRAME: str = "1h"
     REGIME_TIMEFRAME: str = "4h"
@@ -110,13 +122,23 @@ except Exception:
         MAX_CONSECUTIVE_LOSSES = int(os.getenv("MAX_CONSECUTIVE_LOSSES", 3))
         COOLDOWN_MINUTES = int(os.getenv("COOLDOWN_MINUTES", 15))
         MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 3))
+        SECRET_KEY = os.getenv("SECRET_KEY", "trading-ai-secure-default-jwt-secret-key-change-in-production")
+        ENCRYPTION_MASTER_KEY = os.getenv("ENCRYPTION_MASTER_KEY", "")
+        ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440))
+        ALLOW_PUBLIC_SIGNUP = os.getenv("ALLOW_PUBLIC_SIGNUP", "false").lower() == "true"
+        INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@tradingai.local")
+        INITIAL_ADMIN_PASSWORD = os.getenv("INITIAL_ADMIN_PASSWORD", "AdminPassword123!")
         ENTRY_TIMEFRAME = "5m"
         DIRECTION_TIMEFRAME = "1h"
         REGIME_TIMEFRAME = "4h"
         ML_EDGE_THRESHOLD = 0.12
         ML_MIN_PROBABILITY = 0.45
         cors_origin_list = ["http://localhost:5173", "http://127.0.0.1:5173"]
-        default_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
+        default_symbols = [
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT",
+            "LINKUSDT", "DOTUSDT", "LTCUSDT", "BCHUSDT", "TRXUSDT", "ARBUSDT", "SUIUSDT", "APTUSDT",
+            "NEARUSDT", "UNIUSDT", "ETCUSDT", "FILUSDT"
+        ]
 
         @property
         def is_paper_trading(self) -> bool:

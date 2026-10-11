@@ -2,15 +2,20 @@ import React from 'react';
 import { 
   Activity, 
   Terminal, 
+  CandlestickChart as ChartIcon,
   BrainCircuit, 
   FlaskConical, 
   History, 
   ShieldAlert, 
   BookOpen, 
   Settings as SettingsIcon,
-  Power
+  Power,
+  Lock,
+  LogOut,
+  UserCheck
 } from 'lucide-react';
 import { TabType, SystemHealth, RiskStatus } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface HeaderProps {
   currentTab: TabType;
@@ -29,9 +34,12 @@ export const Header: React.FC<HeaderProps> = ({
   wsConnected,
   onToggleKillSwitch
 }) => {
+  const { user, isAuthenticated, openLoginModal, logout } = useAuth();
+
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Activity },
-    { id: 'terminal' as TabType, label: 'Live Terminal', icon: Terminal },
+    { id: 'terminal' as TabType, label: 'Market Terminal', icon: Terminal },
+    { id: 'market-detail' as TabType, label: 'Chart & Detail', icon: ChartIcon },
     { id: 'models' as TabType, label: 'Model Lab', icon: BrainCircuit },
     { id: 'training' as TabType, label: 'Training', icon: FlaskConical },
     { id: 'backtest' as TabType, label: 'Backtesting', icon: History },
@@ -65,14 +73,14 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
                 <span>•</span>
                 <span className="px-1.5 py-0.2 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 font-semibold text-[11px]">
-                  {health?.is_paper ? 'PAPER TRADING' : 'LIVE'}
+                  {health?.is_paper ? 'PAPER TRADING' : 'SIMULATION'}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav className="hidden lg:flex items-center gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = currentTab === tab.id;
@@ -80,24 +88,55 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => onSelectTab(tab.id)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
                     active
                       ? 'bg-slate-800 text-cyan-400 border border-slate-700 shadow-inner'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${active ? 'text-cyan-400' : 'text-slate-500'}`} />
+                  <Icon className={`w-3.5 h-3.5 ${active ? 'text-cyan-400' : 'text-slate-500'}`} />
                   {tab.label}
                 </button>
               );
             })}
           </nav>
 
-          {/* Emergency Kill Switch Button */}
+          {/* Auth & Emergency Controls */}
           <div className="flex items-center gap-3">
+            {/* User Session Badge / Login */}
+            {isAuthenticated && user ? (
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-300">
+                  <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{user.username}</span>
+                  {user.is_superuser && (
+                    <span className="text-[10px] bg-cyan-950 text-cyan-400 px-1 py-0.2 rounded border border-cyan-800">
+                      ADMIN
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={logout}
+                  title="Sign out of private session"
+                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={openLoginModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-cyan-300 border border-slate-800 hover:border-cyan-800 rounded-lg text-xs font-semibold transition-all shadow-sm"
+              >
+                <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Sign In</span>
+              </button>
+            )}
+
+            {/* Emergency Kill Switch */}
             <button
               onClick={onToggleKillSwitch}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 shadow-md ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 shadow-md ${
                 killSwitchActive
                   ? 'bg-rose-600 text-white animate-pulse border border-rose-500 shadow-rose-950/60'
                   : 'bg-slate-900 text-slate-300 hover:bg-rose-950/50 hover:text-rose-300 border border-slate-800 hover:border-rose-900/60'
@@ -105,13 +144,13 @@ export const Header: React.FC<HeaderProps> = ({
               title="Emergency kill switch stops all new order generation"
             >
               <Power className="w-3.5 h-3.5" />
-              <span>{killSwitchActive ? 'KILL SWITCH ENGAGED' : 'KILL SWITCH'}</span>
+              <span className="hidden sm:inline">{killSwitchActive ? 'KILL SWITCH ENGAGED' : 'KILL SWITCH'}</span>
             </button>
           </div>
         </div>
 
         {/* Mobile Navigation bar */}
-        <div className="flex md:hidden overflow-x-auto py-2 gap-2 border-t border-slate-800/60">
+        <div className="flex lg:hidden overflow-x-auto py-2 gap-2 border-t border-slate-800/60">
           {tabs.map((tab) => {
             const active = currentTab === tab.id;
             return (

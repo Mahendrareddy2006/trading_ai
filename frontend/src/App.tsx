@@ -12,9 +12,12 @@ import {
 } from './types';
 import { api } from './services/api';
 import { liveWs } from './services/websocket';
+import { AuthProvider } from './context/AuthContext';
+import { AuthModal } from './components/AuthModal';
 import { Header } from './components/Header';
 import { OverviewView } from './views/OverviewView';
 import { TerminalView } from './views/TerminalView';
+import { MarketDetailView } from './views/MarketDetailView';
 import { ModelLabView } from './views/ModelLabView';
 import { TrainingView } from './views/TrainingView';
 import { BacktestView } from './views/BacktestView';
@@ -22,7 +25,7 @@ import { PortfolioRiskView } from './views/PortfolioRiskView';
 import { JournalView } from './views/JournalView';
 import { SettingsView } from './views/SettingsView';
 
-export function App() {
+function MainApp() {
   const [currentTab, setCurrentTab] = useState<TabType>('overview');
   const [wsConnected, setWsConnected] = useState(false);
 
@@ -38,22 +41,29 @@ export function App() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [tickers, setTickers] = useState<Record<string, TickerData>>({});
+  const [symbols, setSymbols] = useState<string[]>([
+    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 
+    'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 
+    'LTCUSDT', 'BCHUSDT', 'TRXUSDT', 'ARBUSDT', 'SUIUSDT', 
+    'APTUSDT', 'NEARUSDT', 'UNIUSDT', 'ETCUSDT', 'FILUSDT'
+  ]);
 
-  // Selected symbol & timeframe for terminal
+  // Selected symbol & timeframe for terminal & market detail
   const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
   const [selectedTimeframe, setSelectedTimeframe] = useState('1h');
 
   // Load Initial API Data
   const loadInitialData = useCallback(async () => {
     try {
-      const [h, r, pData, tr, m, pred, tick] = await Promise.allSettled([
+      const [h, r, pData, tr, m, pred, tick, symList] = await Promise.allSettled([
         api.getHealth(),
         api.getRiskStatus(),
         api.getPositions(),
         api.getTrades(50),
         api.getModels(),
         api.getPredictions(),
-        api.getTickers()
+        api.getTickers(),
+        api.getSymbols()
       ]);
 
       if (h.status === 'fulfilled') setHealth(h.value);
@@ -68,6 +78,9 @@ export function App() {
       if (m.status === 'fulfilled') setModels(m.value);
       if (pred.status === 'fulfilled') setPredictions(pred.value);
       if (tick.status === 'fulfilled') setTickers(tick.value);
+      if (symList.status === 'fulfilled' && symList.value?.length > 0) {
+        setSymbols(symList.value);
+      }
     } catch (e) {
       console.error('Error fetching initial data:', e);
     }
@@ -110,22 +123,28 @@ export function App() {
           setTickers((prev) => ({
             ...prev,
             [event.symbol]: {
+              symbol: event.symbol,
+              market_type: event.market_type || 'USDⓈ-M Perp',
               price: event.price,
               change_24h: event.change_24h ?? prev[event.symbol]?.change_24h ?? 0,
+              change_24h_abs: event.change_24h_abs ?? prev[event.symbol]?.change_24h_abs ?? 0,
               high_24h: event.high_24h ?? prev[event.symbol]?.high_24h ?? event.price,
               low_24h: event.low_24h ?? prev[event.symbol]?.low_24h ?? event.price,
               volume_24h: event.volume_24h ?? prev[event.symbol]?.volume_24h ?? 0,
+              quote_volume_24h: event.quote_volume_24h ?? prev[event.symbol]?.quote_volume_24h ?? 0,
+              mark_price: event.mark_price ?? prev[event.symbol]?.mark_price ?? event.price,
+              funding_rate: event.funding_rate ?? prev[event.symbol]?.funding_rate ?? 0,
+              bid_price: event.bid_price ?? prev[event.symbol]?.bid_price ?? event.price,
+              ask_price: event.ask_price ?? prev[event.symbol]?.ask_price ?? event.price,
+              spread: event.spread ?? prev[event.symbol]?.spread ?? 0,
+              timestamp: event.timestamp || new Date().toISOString(),
+              is_stale: event.is_stale ?? false
             }
           }));
         }
         if (event.equity !== undefined) setEquity(event.equity);
         if (event.cash !== undefined) setCash(event.cash);
         if (event.unrealized_pnl !== undefined) setUnrealizedPnl(event.unrealized_pnl);
-
-        // Refresh candles if tick matches selected symbol
-        if (event.symbol === selectedSymbol) {
-          fetchCandles();
-        }
       } else if (event.type === 'position_opened' || event.type === 'position_closed') {
         api.getPositions().then((p) => {
           setPositions(p.positions);
@@ -145,7 +164,7 @@ export function App() {
       clearInterval(checkInterval);
       unsubscribe();
     };
-  }, [selectedSymbol, fetchCandles]);
+  }, [selectedSymbol]);
 
   // Action: Toggle Emergency Kill Switch
   const handleToggleKillSwitch = async () => {
@@ -217,15 +236,27 @@ export function App() {
 
         {currentTab === 'terminal' && (
           <TerminalView
-            candles={candles}
+            tickers={tickers}
+            selectedSymbol={selectedSymbol}
+            onSelectSymbol={setSelectedSymbol}
+            onOpenDetail={(sym) => {
+              setSelectedSymbol(sym);
+              setCurrentTab('market-detail');
+            }}
+            wsConnected={wsConnected}
+          />
+        )}
+
+        {currentTab === 'market-detail' && (
+          <MarketDetailView
             symbol={selectedSymbol}
-            timeframe={selectedTimeframe}
             onSymbolChange={setSelectedSymbol}
-            onTimeframeChange={setSelectedTimeframe}
-            prediction={currentPrediction}
-            activePosition={activePosition}
+            symbols={symbols}
             ticker={tickers[selectedSymbol]}
+            activePosition={activePosition}
+            prediction={currentPrediction}
             onClosePosition={handleClosePosition}
+            onRefreshData={loadInitialData}
           />
         )}
 
@@ -272,22 +303,33 @@ export function App() {
         )}
       </main>
 
+      {/* Global Auth Modal */}
+      <AuthModal />
+
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/80 py-4 text-xs font-mono text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span>Trading AI Research & Execution Platform</span>
+            <span>Trading AI Research & Paper-Trading Platform</span>
             <span>•</span>
-            <span className="text-emerald-500">Paper Trading Engine Active</span>
+            <span className="text-emerald-500">Paper Engine Active (Zero Live Order Risk)</span>
           </div>
           <div className="flex items-center gap-4">
             <span>UTC Clock: {new Date().toISOString().slice(11, 19)}</span>
             <span>•</span>
-            <span className="text-slate-400">Strict Anti-Leakage Protocol</span>
+            <span className="text-slate-400">Binance Futures Market Data</span>
           </div>
         </div>
       </footer>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
   );
 }
 
