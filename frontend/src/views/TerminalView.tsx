@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { 
   Candle, 
   Prediction, 
-  Position 
+  Position,
+  TickerData
 } from '../types';
 import { CandlestickChart } from '../components/CandlestickChart';
 import { 
@@ -21,6 +22,7 @@ interface TerminalViewProps {
   onTimeframeChange: (tf: string) => void;
   prediction: Prediction | null;
   activePosition: Position | undefined;
+  ticker?: TickerData;
   onClosePosition: (symbol: string) => void;
 }
 
@@ -32,19 +34,20 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   onTimeframeChange,
   prediction,
   activePosition,
+  ticker,
   onClosePosition
 }) => {
   const [symbols] = useState(['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']);
   const [timeframes] = useState(['5m', '1h', '4h']);
 
-  const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
-  const previousPrice = candles.length > 1 ? candles[candles.length - 2].close : currentPrice;
-  const priceChange = currentPrice - previousPrice;
-  const priceChangePct = previousPrice > 0 ? (priceChange / previousPrice) * 100 : 0;
+  const candlePrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
+  const markPrice = ticker?.price || candlePrice;
+  const changePct = ticker?.change_24h ?? 0;
+  const isUp = changePct >= 0;
 
   return (
     <div className="space-y-6">
-      {/* Symbol & Timeframe Toolbar */}
+      {/* Symbol & Timeframe Toolbar with Real Exchange Prices */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 rounded-xl p-4 backdrop-blur-md">
         <div className="flex items-center gap-3">
           {/* Symbol Select Buttons */}
@@ -82,22 +85,30 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
           </div>
         </div>
 
-        {/* Real-time Ticker Stats */}
+        {/* Real-time Ticker Stats from Binance */}
         <div className="flex items-center gap-6 font-mono text-xs">
           <div>
-            <span className="text-slate-500 block text-[10px] uppercase">Mark Price</span>
+            <span className="text-slate-500 block text-[10px] uppercase">Real Mark Price</span>
             <span className="text-base font-black text-slate-100">
-              ${currentPrice.toFixed(2)}
+              ${markPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div>
-            <span className="text-slate-500 block text-[10px] uppercase">Delta</span>
-            <span className={`font-bold ${priceChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {priceChangePct >= 0 ? '+' : ''}{priceChangePct.toFixed(2)}%
+            <span className="text-slate-500 block text-[10px] uppercase">24h Change</span>
+            <span className={`font-bold ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {isUp ? '+' : ''}{changePct.toFixed(2)}%
             </span>
           </div>
+          {ticker?.high_24h && (
+            <div>
+              <span className="text-slate-500 block text-[10px] uppercase">24h High / Low</span>
+              <span className="text-slate-300">
+                ${ticker.high_24h.toFixed(1)} / ${ticker.low_24h.toFixed(1)}
+              </span>
+            </div>
+          )}
           <div>
-            <span className="text-slate-500 block text-[10px] uppercase">Candles Loaded</span>
+            <span className="text-slate-500 block text-[10px] uppercase">Live Candles</span>
             <span className="text-slate-300 font-semibold">{candles.length}</span>
           </div>
         </div>

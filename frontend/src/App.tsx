@@ -7,7 +7,8 @@ import {
   Trade, 
   ModelRecord, 
   Prediction, 
-  Candle 
+  Candle,
+  TickerData
 } from './types';
 import { api } from './services/api';
 import { liveWs } from './services/websocket';
@@ -36,6 +37,7 @@ export function App() {
   const [models, setModels] = useState<ModelRecord[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [tickers, setTickers] = useState<Record<string, TickerData>>({});
 
   // Selected symbol & timeframe for terminal
   const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
@@ -44,13 +46,14 @@ export function App() {
   // Load Initial API Data
   const loadInitialData = useCallback(async () => {
     try {
-      const [h, r, pData, tr, m, pred] = await Promise.allSettled([
+      const [h, r, pData, tr, m, pred, tick] = await Promise.allSettled([
         api.getHealth(),
         api.getRiskStatus(),
         api.getPositions(),
         api.getTrades(50),
         api.getModels(),
-        api.getPredictions()
+        api.getPredictions(),
+        api.getTickers()
       ]);
 
       if (h.status === 'fulfilled') setHealth(h.value);
@@ -64,6 +67,7 @@ export function App() {
       if (tr.status === 'fulfilled') setTrades(tr.value);
       if (m.status === 'fulfilled') setModels(m.value);
       if (pred.status === 'fulfilled') setPredictions(pred.value);
+      if (tick.status === 'fulfilled') setTickers(tick.value);
     } catch (e) {
       console.error('Error fetching initial data:', e);
     }
@@ -96,8 +100,29 @@ export function App() {
     }, 1000);
 
     const unsubscribe = liveWs.subscribe((event) => {
-      if (event.type === 'tick') {
-        // Refresh positions or candle close
+      if (event.type === 'SNAPSHOT' && event.data) {
+        if (event.data.tickers) setTickers(event.data.tickers);
+        if (event.data.equity !== undefined) setEquity(event.data.equity);
+        if (event.data.cash !== undefined) setCash(event.data.cash);
+        if (event.data.unrealized_pnl !== undefined) setUnrealizedPnl(event.data.unrealized_pnl);
+      } else if (event.type === 'TICK') {
+        if (event.symbol && event.price) {
+          setTickers((prev) => ({
+            ...prev,
+            [event.symbol]: {
+              price: event.price,
+              change_24h: event.change_24h ?? prev[event.symbol]?.change_24h ?? 0,
+              high_24h: event.high_24h ?? prev[event.symbol]?.high_24h ?? event.price,
+              low_24h: event.low_24h ?? prev[event.symbol]?.low_24h ?? event.price,
+              volume_24h: event.volume_24h ?? prev[event.symbol]?.volume_24h ?? 0,
+            }
+          }));
+        }
+        if (event.equity !== undefined) setEquity(event.equity);
+        if (event.cash !== undefined) setCash(event.cash);
+        if (event.unrealized_pnl !== undefined) setUnrealizedPnl(event.unrealized_pnl);
+
+        // Refresh candles if tick matches selected symbol
         if (event.symbol === selectedSymbol) {
           fetchCandles();
         }
@@ -184,6 +209,7 @@ export function App() {
             predictions={predictions}
             riskStatus={riskStatus}
             trades={trades}
+            tickers={tickers}
             onClosePosition={handleClosePosition}
             onRefresh={loadInitialData}
           />
@@ -198,6 +224,7 @@ export function App() {
             onTimeframeChange={setSelectedTimeframe}
             prediction={currentPrediction}
             activePosition={activePosition}
+            ticker={tickers[selectedSymbol]}
             onClosePosition={handleClosePosition}
           />
         )}

@@ -40,8 +40,12 @@ class PaperExecutionEngine:
     @property
     def equity(self) -> float:
         """Total equity = cash balance + sum of open positions unrealized PnL."""
-        unrealized = sum(p.get("unrealized_pnl", 0.0) for p in self.positions.values())
-        return self.cash + unrealized
+        return self.cash + self.unrealized_pnl
+
+    @property
+    def unrealized_pnl(self) -> float:
+        """Sum of all open positions unrealized PnL."""
+        return sum(p.get("unrealized_pnl", 0.0) for p in self.positions.values())
 
     def get_open_positions_list(self) -> List[Dict[str, Any]]:
         return list(self.positions.values())

@@ -8,6 +8,14 @@ export type TabType =
   | 'journal' 
   | 'settings';
 
+export interface TickerData {
+  price: number;
+  change_24h: number;
+  high_24h: number;
+  low_24h: number;
+  volume_24h: number;
+}
+
 export interface Candle {
   timestamp: string;
   open: number;

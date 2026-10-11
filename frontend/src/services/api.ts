@@ -6,6 +6,7 @@ import {
   Prediction,
   RiskStatus,
   SystemHealth,
+  TickerData,
   Trade
 } from '../types';
 
@@ -22,6 +23,13 @@ export const api = {
     const res = await fetch(`${API_BASE}/config`);
     if (!res.ok) throw new Error('Failed to fetch config');
     return res.json();
+  },
+
+  async getTickers(): Promise<Record<string, TickerData>> {
+    const res = await fetch(`${API_BASE}/market/tickers`);
+    if (!res.ok) throw new Error('Failed to fetch tickers');
+    const data = await res.json();
+    return data.tickers || {};
   },
 
   async getSymbols(): Promise<string[]> {

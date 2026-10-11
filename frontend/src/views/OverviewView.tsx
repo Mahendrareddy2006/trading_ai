@@ -11,7 +11,7 @@ import {
   RefreshCw,
   XCircle
 } from 'lucide-react';
-import { Position, Prediction, RiskStatus, Trade } from '../types';
+import { Position, Prediction, RiskStatus, Trade, TickerData } from '../types';
 
 interface OverviewViewProps {
   cash: number;
@@ -21,6 +21,7 @@ interface OverviewViewProps {
   predictions: Prediction[];
   riskStatus: RiskStatus | null;
   trades: Trade[];
+  tickers: Record<string, TickerData>;
   onClosePosition: (symbol: string) => void;
   onRefresh: () => void;
 }
@@ -33,6 +34,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   predictions,
   riskStatus,
   trades,
+  tickers,
   onClosePosition,
   onRefresh
 }) => {
@@ -40,36 +42,46 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   // Realized PnL from trades
   const realizedPnl = trades.reduce((acc, t) => acc + (t.net_pnl || 0), 0);
-  const totalReturnPct = equity > 0 ? ((equity - 10000) / 10000) * 100 : 0;
+  const totalReturnPct = equity > 0 ? ((realizedPnl + unrealizedPnl) / (equity - realizedPnl - unrealizedPnl || 10000)) * 100 : 0;
 
   return (
     <div className="space-y-6">
-      {/* Top Banner / Ticker Strip */}
+      {/* Top Banner / Ticker Strip with Real Live Exchange Data */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'].map((sym) => {
           const pred = predictions.find((p) => p.symbol === sym);
+          const t = tickers[sym];
+          const price = t?.price;
+          const change = t?.change_24h ?? 0;
+          const isUp = change >= 0;
+
           return (
-            <div key={sym} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 backdrop-blur-sm flex items-center justify-between">
-              <div>
-                <span className="text-xs font-mono text-slate-400">{sym}</span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                    pred?.direction === 'LONG' 
-                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50' 
-                      : pred?.direction === 'SHORT'
-                      ? 'bg-rose-950 text-rose-400 border border-rose-800/50'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}>
-                    {pred?.direction || 'NEUTRAL'}
-                  </span>
-                  <span className="text-[11px] font-mono text-slate-500">
-                    {pred ? `${(pred.confidence * 100).toFixed(0)}%` : '--'}
-                  </span>
-                </div>
+            <div key={sym} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 backdrop-blur-sm shadow-md">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-slate-200">{sym}</span>
+                <span className={`text-[11px] font-mono font-bold flex items-center ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {isUp ? '+' : ''}{change.toFixed(2)}%
+                </span>
               </div>
-              <div className="text-right">
-                <span className="text-xs font-mono text-slate-400 uppercase">Regime</span>
-                <p className="text-xs font-bold text-slate-200 uppercase">{pred?.regime || 'CHOP'}</p>
+
+              <div className="mt-1 flex items-baseline justify-between">
+                <span className="text-base font-black font-mono text-slate-100">
+                  {price ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                  pred?.direction === 'LONG' 
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50' 
+                    : pred?.direction === 'SHORT'
+                    ? 'bg-rose-950 text-rose-400 border border-rose-800/50'
+                    : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {pred?.direction || 'NEUTRAL'}
+                </span>
+              </div>
+
+              <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                <span>Vol: {t?.volume_24h ? t.volume_24h.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '--'}</span>
+                <span className="uppercase text-slate-400 font-semibold">{pred?.regime || 'LIVE'}</span>
               </div>
             </div>
           );

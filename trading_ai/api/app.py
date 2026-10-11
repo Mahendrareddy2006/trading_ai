@@ -50,13 +50,9 @@ ml_strategy = MLMultiTimeframeStrategy(
     min_probability=settings.ML_MIN_PROBABILITY
 )
 
-# Active market prices cache
-live_prices: Dict[str, float] = {
-    "BTCUSDT": 91500.0,
-    "ETHUSDT": 3150.0,
-    "BNBUSDT": 620.0,
-    "SOLUSDT": 185.0
-}
+# Active real-time market prices & 24h stats cache (populated dynamically from exchange)
+live_prices: Dict[str, float] = {}
+live_ticker_stats: Dict[str, Dict[str, Any]] = {}
 
 
 # ============================================================================
@@ -86,69 +82,92 @@ class BacktestRequest(BaseModel):
 
 
 # ============================================================================
-# Background Worker for Live Paper Trading Simulation
+# Background Worker for Real-Time Market Feed & Paper Trading
 # ============================================================================
 async def live_trading_loop():
-    """Background task simulating tick arrivals and strategy evaluation."""
-    logger.info("Starting background paper-trading tick loop...")
+    """Background task pulling real Binance market prices and evaluating strategy."""
+    logger.info("Starting background paper-trading tick loop with real Binance market feed...")
+
+    # Fetch initial real-time market prices on startup
+    try:
+        init_tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
+        for sym, t_data in init_tickers.items():
+            live_prices[sym] = t_data["price"]
+            live_ticker_stats[sym] = t_data
+        logger.info(f"Initialized real live prices: {live_prices}")
+    except Exception as e:
+        logger.warning(f"Initial ticker fetch warning: {e}")
+
     while True:
         try:
+            # 1. Fetch real-time ticker data from Binance
+            real_tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
             for symbol in settings.default_symbols:
-                # 1. Fetch real latest candle or fallback to simulated tick
-                candles_1h = data_manager.load_candles(symbol, "1h")
-                if candles_1h:
-                    base_price = float(candles_1h[-1]["close"])
+                if symbol in real_tickers:
+                    t_info = real_tickers[symbol]
+                    current_price = t_info["price"]
+                    live_prices[symbol] = current_price
+                    live_ticker_stats[symbol] = t_info
+                elif symbol in live_prices:
+                    current_price = live_prices[symbol]
                 else:
-                    base_price = live_prices.get(symbol, 1000.0)
+                    live_candles = data_manager.get_live_candles(symbol, "1h", limit=3)
+                    current_price = float(live_candles[-1]["close"]) if live_candles else 100.0
+                    live_prices[symbol] = current_price
 
-                # Micro tick jitter for live demonstration
-                jitter = (hash(f"{symbol}_{datetime.now().second}") % 100 - 50) * 0.0001
-                current_price = round(base_price * (1.0 + jitter), 2)
-                live_prices[symbol] = current_price
-
-                # 2. Update paper engine positions
+                # 2. Update paper engine positions with real current price
                 paper_engine.on_price_update(symbol, current_price)
 
-                # 3. Evaluate Strategy if flat
-                if symbol not in paper_engine.positions and candles_1h and len(candles_1h) >= 40:
-                    candles_5m = data_manager.load_candles(symbol, "5m")
-                    candles_dict = {"1h": candles_1h, "5m": candles_5m}
+                # 3. Evaluate Strategy with live candles if flat
+                if symbol not in paper_engine.positions:
+                    candles_1h = data_manager.get_live_candles(symbol, "1h", limit=100)
+                    if candles_1h and len(candles_1h) >= 40:
+                        candles_5m = data_manager.get_live_candles(symbol, "5m", limit=100)
+                        candles_dict = {"1h": candles_1h, "5m": candles_5m}
 
-                    decision = ml_strategy.evaluate(symbol, candles_dict)
+                        decision = ml_strategy.evaluate(symbol, candles_dict)
 
-                    if decision.action in ["BUY", "SELL"]:
-                        valid, qty, reason = risk_engine.validate_trade_order(
-                            symbol=symbol,
-                            side="LONG" if decision.action == "BUY" else "SHORT",
-                            price=current_price,
-                            stop_loss_pct=decision.stop_loss_pct,
-                            current_equity=paper_engine.equity,
-                            open_positions=paper_engine.get_open_positions_list()
-                        )
-                        if valid and qty > 0:
-                            paper_engine.open_position(
+                        if decision.action in ["BUY", "SELL"]:
+                            valid, qty, reason = risk_engine.validate_trade_order(
                                 symbol=symbol,
                                 side="LONG" if decision.action == "BUY" else "SHORT",
-                                entry_price=current_price,
-                                quantity=qty,
+                                price=current_price,
                                 stop_loss_pct=decision.stop_loss_pct,
-                                take_profit_pct=decision.take_profit_pct
+                                current_equity=paper_engine.equity,
+                                open_positions=paper_engine.get_open_positions_list()
                             )
+                            if valid and qty > 0:
+                                paper_engine.open_position(
+                                    symbol=symbol,
+                                    side="LONG" if decision.action == "BUY" else "SHORT",
+                                    entry_price=current_price,
+                                    quantity=qty,
+                                    stop_loss_pct=decision.stop_loss_pct,
+                                    take_profit_pct=decision.take_profit_pct
+                                )
 
-                # 4. Broadcast Tick Event
+                # 4. Broadcast Real Live Tick Event over WebSocket
+                t_stat = live_ticker_stats.get(symbol, {})
                 await event_bus.emit("TICK", {
                     "symbol": symbol,
                     "price": current_price,
+                    "change_24h": t_stat.get("change_24h", 0.0),
+                    "high_24h": t_stat.get("high_24h", current_price),
+                    "low_24h": t_stat.get("low_24h", current_price),
+                    "volume_24h": t_stat.get("volume_24h", 0.0),
                     "equity": round(paper_engine.equity, 2),
-                    "open_positions": len(paper_engine.positions)
+                    "cash": round(paper_engine.cash, 2),
+                    "unrealized_pnl": round(paper_engine.unrealized_pnl, 2),
+                    "open_positions": len(paper_engine.positions),
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 })
 
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error(f"Error in live trading loop: {e}")
-            await asyncio.sleep(5)
+            await asyncio.sleep(4)
 
 
 @app.on_event("startup")
@@ -209,15 +228,25 @@ def get_symbols():
     return {"symbols": settings.default_symbols}
 
 
+@app.get("/api/market/tickers")
+def get_market_tickers():
+    """Returns real-time 24h ticker metrics directly from Binance."""
+    if not live_ticker_stats:
+        tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
+        for sym, t in tickers.items():
+            live_ticker_stats[sym] = t
+            live_prices[sym] = t["price"]
+    return {"tickers": live_ticker_stats}
+
+
 @app.get("/api/market/candles")
 def get_candles(
     symbol: str = Query("BTCUSDT"),
     timeframe: str = Query("1h"),
     limit: int = Query(100, le=500)
 ):
-    candles = data_manager.load_candles(symbol, timeframe)
-    if not candles:
-        candles = data_manager.fetch_binance_klines(symbol, timeframe, limit=limit)
+    """Returns real live candles from Binance up to the current minute."""
+    candles = data_manager.get_live_candles(symbol, timeframe, limit=limit)
     return {"symbol": symbol, "timeframe": timeframe, "candles": candles[-limit:]}
 
 
@@ -225,7 +254,7 @@ def get_candles(
 def get_latest_predictions():
     results = []
     for symbol in settings.default_symbols:
-        candles = data_manager.load_candles(symbol, "1h")
+        candles = data_manager.get_live_candles(symbol, "1h", limit=120)
         if candles and len(candles) >= 40:
             pred = model_predictor.predict(candles, symbol, "1h")
             results.append(pred.to_dict())
@@ -372,8 +401,10 @@ async def websocket_live_stream(websocket: WebSocket):
             "type": "SNAPSHOT",
             "data": {
                 "prices": live_prices,
+                "tickers": live_ticker_stats,
                 "equity": round(paper_engine.equity, 2),
                 "cash": round(paper_engine.cash, 2),
+                "unrealized_pnl": round(paper_engine.unrealized_pnl, 2),
                 "positions": paper_engine.get_open_positions_list(),
                 "kill_switch": risk_engine.kill_switch_active
             }

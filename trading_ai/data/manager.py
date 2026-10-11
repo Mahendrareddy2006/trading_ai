@@ -150,5 +150,47 @@ class DataManager:
 
         return merged, new_count
 
+    def fetch_realtime_tickers(self, symbols: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+        """Fetches real-time price, 24h change %, 24h high/low, and volume directly from Binance."""
+        target_symbols = set(symbols or ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"])
+        endpoints = [
+            f"{self.base_url}/ticker/24hr",
+            "https://api.binance.com/api/v3/ticker/24hr"
+        ]
+        for url in endpoints:
+            try:
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 200:
+                    raw = resp.json()
+                    out = {}
+                    for item in raw:
+                        s = item.get("symbol")
+                        if s in target_symbols:
+                            out[s] = {
+                                "price": float(item.get("lastPrice") or item.get("price", 0.0)),
+                                "change_24h": round(float(item.get("priceChangePercent", 0.0)), 2),
+                                "high_24h": float(item.get("highPrice", 0.0)),
+                                "low_24h": float(item.get("lowPrice", 0.0)),
+                                "volume_24h": round(float(item.get("volume", 0.0)), 2)
+                            }
+                    if out:
+                        return out
+            except Exception as e:
+                logger.warning(f"Failed to fetch ticker from {url}: {e}")
+        return {}
+
+    def get_live_candles(
+        self,
+        symbol: str,
+        timeframe: str = "1h",
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Fetches true live candles from Binance up to the current minute. Falls back to cache if offline."""
+        live = self.fetch_binance_klines(symbol=symbol, interval=timeframe, limit=limit)
+        if live:
+            return live
+        cached = self.load_candles(symbol, timeframe)
+        return cached[-limit:] if cached else []
+
 
 data_manager = DataManager()
