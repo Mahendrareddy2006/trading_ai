@@ -18,7 +18,7 @@ from email.utils import parsedate_to_datetime
 import hashlib
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 import requests
 
