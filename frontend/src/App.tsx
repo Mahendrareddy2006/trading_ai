@@ -360,7 +360,7 @@ function MainApp() {
           <div className="flex items-center gap-4">
             <span>UTC Clock: {new Date().toISOString().slice(11, 19)}</span>
             <span>•</span>
-            <span className="text-slate-400">Binance Futures Market Data</span>
+            <span className="text-cyan-400">Kraken Public Market Data (No Keys Required)</span>
           </div>
         </div>
       </footer>

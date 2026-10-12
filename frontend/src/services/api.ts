@@ -2,6 +2,7 @@ import {
   AuthResponse,
   BacktestResult,
   Candle,
+  CandleDetailedResponse,
   ExchangeAccountSummary,
   ExchangeConnectionRecord,
   ExchangeOrder,
@@ -80,11 +81,18 @@ export const api = {
     return data.symbols;
   },
 
-  async getCandles(symbol: string, timeframe: string, limit = 100): Promise<Candle[]> {
+  async getCandlesDetailed(symbol: string, timeframe: string, limit = 100): Promise<CandleDetailedResponse> {
     const res = await fetch(`${API_BASE}/market/candles?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`);
-    if (!res.ok) throw new Error('Failed to fetch candles');
-    const data = await res.json();
-    return data.candles;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to fetch candles');
+    }
+    return res.json();
+  },
+
+  async getCandles(symbol: string, timeframe: string, limit = 100): Promise<Candle[]> {
+    const data = await this.getCandlesDetailed(symbol, timeframe, limit);
+    return data.candles || [];
   },
 
   async getPredictions(): Promise<Prediction[]> {

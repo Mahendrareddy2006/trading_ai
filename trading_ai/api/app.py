@@ -118,8 +118,8 @@ class BacktestRequest(BaseModel):
 # Background Worker for Real-Time Market Feed & Paper Trading
 # ============================================================================
 async def live_trading_loop():
-    """Background task pulling real Binance market prices and evaluating strategy."""
-    logger.info("Starting background paper-trading tick loop with real Binance market feed...")
+    """Background task pulling real market prices and evaluating strategy."""
+    logger.info("Starting background paper-trading tick loop with public market feed (Kraken / Public)...")
 
     # Fetch initial real-time market prices on startup
     try:
@@ -133,7 +133,7 @@ async def live_trading_loop():
 
     while True:
         try:
-            # 1. Fetch real-time ticker data from Binance
+            # 1. Fetch real-time ticker data from public market provider
             real_tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
             for symbol in settings.default_symbols:
                 if symbol in real_tickers:
@@ -191,7 +191,7 @@ async def live_trading_loop():
                 t_stat = live_ticker_stats.get(symbol, {})
                 await event_bus.emit("TICK", {
                     "symbol": symbol,
-                    "market_type": t_stat.get("market_type", "USDⓈ-M Perp"),
+                    "market_type": t_stat.get("market_type", "Spot (Kraken Public)"),
                     "price": current_price,
                     "change_24h": t_stat.get("change_24h", 0.0),
                     "change_24h_abs": t_stat.get("change_24h_abs", 0.0),
@@ -312,13 +312,18 @@ def get_symbols():
 
 @app.get("/api/market/tickers")
 def get_market_tickers():
-    """Returns real-time 24h ticker metrics directly from Binance."""
-    if not live_ticker_stats:
-        tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
-        for sym, t in tickers.items():
-            live_ticker_stats[sym] = t
-            live_prices[sym] = t["price"]
-    return {"tickers": live_ticker_stats}
+    """Returns real-time 24h ticker metrics directly from public market data provider (Kraken)."""
+    tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
+    for sym, t in tickers.items():
+        live_ticker_stats[sym] = t
+        live_prices[sym] = t["price"]
+    return {
+        "tickers": live_ticker_stats,
+        "count": len(live_ticker_stats),
+        "data_source": "kraken_public",
+        "data_freshness": "live",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
 @app.get("/api/market/candles")
@@ -327,9 +332,13 @@ def get_candles(
     timeframe: str = Query("1h"),
     limit: int = Query(100, le=500)
 ):
-    """Returns real live candles from Binance up to the current minute."""
-    candles = data_manager.get_live_candles(symbol, timeframe, limit=limit)
-    return {"symbol": symbol, "timeframe": timeframe, "candles": candles[-limit:]}
+    """Returns real live candles from Kraken public market data provider."""
+    result = data_manager.get_candles_detailed(symbol=symbol, timeframe=timeframe, limit=limit)
+    if result.get("error") and not result.get("candles"):
+        error_msg = result["error"]
+        status_code = 400 if ("not listed" in error_msg or "not supported" in error_msg) else 502
+        raise HTTPException(status_code=status_code, detail=error_msg)
+    return result
 
 
 @app.get("/api/predictions/latest")
@@ -571,15 +580,38 @@ def get_exchange_user_trades(
 
 @app.get("/api/system/data-status")
 def get_system_data_status():
-    """Returns health of exchange connectivity, latency, and data streams."""
-    ping_info = binance_futures_client.get_server_ping()
+    """Returns health of public market data connectivity, latency, and data streams."""
+    from trading_ai.data.providers.manager import market_data_provider
+    provider_status = market_data_provider.get_system_status()
+    primary_info = provider_status.get("primary_provider", {})
+    last_update = provider_status.get("last_successful_update") or datetime.now(timezone.utc).isoformat()
+
+    ping_info = {
+        "status": provider_status.get("status", "online"),
+        "latency_ms": provider_status.get("latency_ms", 0),
+        "exchange": primary_info.get("display_name", "Kraken Public Market Data (Spot)"),
+        "provider": "kraken",
+        "endpoint": "https://api.kraken.com/0/public",
+        "credentials_required": False,
+        "testnet": False,
+        "last_checked": datetime.now(timezone.utc).isoformat()
+    }
+
     return {
         "exchange_connectivity": ping_info,
-        "credentials_configured": binance_futures_client.is_configured,
+        "market_data_provider": provider_status,
+        "public_data_source": "kraken",
+        "public_data_active": True,
+        "credentials_required": False,
+        "credentials_configured": False,  # Public market data access requires zero user credentials
+        "private_exchange_configured": binance_futures_client.is_configured,
+        "data_freshness": "live" if provider_status.get("status") == "online" else "degraded",
+        "last_successful_update": last_update,
         "active_symbols": settings.default_symbols,
+        "supported_symbols_count": len(settings.default_symbols),
         "live_prices_cached": len(live_prices),
-        "testnet": binance_futures_client.testnet,
-        "server_time_offset_ms": binance_futures_client.time_offset_ms,
+        "testnet": False,
+        "server_time_offset_ms": 0.0,
         "trading_mode": settings.TRADING_MODE,
         "is_paper_trading": settings.is_paper_trading,
         "timestamp": datetime.now(timezone.utc).isoformat()

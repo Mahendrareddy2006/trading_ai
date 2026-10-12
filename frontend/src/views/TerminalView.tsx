@@ -84,7 +84,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const tickerList = useMemo(() => {
     return Object.entries(tickers).map(([sym, t]) => ({
       symbol: sym,
-      market_type: t.market_type || 'USDⓈ-M Perp',
+      market_type: t.market_type || 'Spot (Kraken Public)',
       price: t.price || 0,
       change_24h: t.change_24h || 0,
       change_24h_abs: t.change_24h_abs || 0,
@@ -151,9 +151,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
           <div>
             <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block">Market Venue</span>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="font-bold text-slate-100 text-sm">Binance USDⓈ-M Futures</span>
+              <span className="font-bold text-slate-100 text-sm">Kraken Public Market Data</span>
               <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60 font-mono font-semibold">
-                Perpetual
+                Live Feed
               </span>
             </div>
           </div>

@@ -110,11 +110,11 @@ export const PortfolioRiskView: React.FC<PortfolioRiskViewProps> = ({
             }`}
           >
             <Wallet className="w-4 h-4 text-amber-300" />
-            <span>Real Binance USDⓈ-M Futures (Read-Only)</span>
+            <span>Private Exchange Sync (Optional)</span>
             {exchangeSummary?.is_configured ? (
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             ) : (
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-normal">Setup</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-normal">Optional</span>
             )}
           </button>
         </div>
@@ -305,14 +305,14 @@ export const PortfolioRiskView: React.FC<PortfolioRiskViewProps> = ({
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-bold text-slate-100">
-                      Real Binance Futures Credentials Not Configured
+                      Private Exchange Account Not Connected (Optional)
                     </h3>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800/40">
-                      READ-ONLY PROTOCOL
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700/60">
+                      OPTIONAL READ-ONLY
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
-                    To display your verified Binance USDⓈ-M Futures balance, active margin, unrealized PnL, open positions, and orders, configure read-only API credentials locally. The application strictly rejects fake numbers and fails closed when credentials are absent.
+                    Public market data, tickers, interactive charts, and AI signals are fully active out of the box with zero credentials required. Connecting your private exchange account here is strictly optional and only required if you wish to monitor your live personal wallet balance, real open positions, and executed fills.
                   </p>
                 </div>
               </div>

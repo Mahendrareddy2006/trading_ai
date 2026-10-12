@@ -33,16 +33,17 @@ class Settings(BaseSettings):
     HOST: str = "127.0.0.1"
     PORT: int = 8000
     DEBUG: bool = False
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,https://trading-ai-khaki.vercel.app"
+    MARKET_DATA_PROVIDER: str = Field(default="kraken", description="Public market data provider: kraken, bybit, or composite")
 
     # Trading Execution Mode: "paper" or "live"
     TRADING_MODE: str = Field(default="paper", description="Operating mode: paper or live")
     SAFE_KILL_SWITCH_ACTIVE: bool = Field(default=False, description="Emergency kill switch to halt all trading")
     INITIAL_PAPER_BALANCE: float = Field(default=10000.0, description="Virtual initial balance for paper trading")
 
-    # Binance Credentials (OPTIONAL for paper trading)
-    BINANCE_API_KEY: str = Field(default="", description="Binance API Key")
-    BINANCE_API_SECRET: str = Field(default="", description="Binance API Secret")
+    # Optional Exchange Credentials (ONLY for private account balance sync; NOT needed for public market data)
+    BINANCE_API_KEY: str = Field(default="", description="Optional Binance API Key (only for private account sync)")
+    BINANCE_API_SECRET: str = Field(default="", description="Optional Binance API Secret (only for private account sync)")
     BINANCE_TESTNET: bool = Field(default=False, description="Whether to use Binance Futures Testnet")
 
     # Telegram Alerting (Optional)
@@ -81,11 +82,10 @@ class Settings(BaseSettings):
     INITIAL_ADMIN_EMAIL: str = Field(default="admin@tradingai.local", description="Initial provisioned admin account")
     INITIAL_ADMIN_PASSWORD: str = Field(default="AdminPassword123!", description="Initial provisioned admin password")
 
-    # Strategy & Machine Learning Defaults (20 Top USDⓈ-M Futures Pairs)
+    # Supported Kraken Public Market Data Pairs (USDT and USD)
     DEFAULT_SYMBOLS_STR: str = (
-        "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,DOGEUSDT,ADAUSDT,AVAXUSDT,"
-        "LINKUSDT,DOTUSDT,LTCUSDT,BCHUSDT,TRXUSDT,ARBUSDT,SUIUSDT,APTUSDT,"
-        "NEARUSDT,UNIUSDT,ETCUSDT,FILUSDT"
+        "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT,ADAUSDT,AVAXUSDT,"
+        "LINKUSDT,DOTUSDT,LTCUSDT,BCHUSDT,ATOMUSDT,SHIBUSDT,BTCUSD,ETHUSD,SOLUSD,ARBUSD,SUIUSD,NEARUSD"
     )
     ENTRY_TIMEFRAME: str = "5m"
     DIRECTION_TIMEFRAME: str = "1h"
@@ -144,7 +144,12 @@ except Exception:
         REGIME_TIMEFRAME = "4h"
         ML_EDGE_THRESHOLD = 0.12
         ML_MIN_PROBABILITY = 0.45
-        cors_origin_list = ["http://localhost:5173", "http://127.0.0.1:5173"]
+        MARKET_DATA_PROVIDER = os.getenv("MARKET_DATA_PROVIDER", "kraken")
+        cors_origin_list = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://trading-ai-khaki.vercel.app"
+        ]
         default_symbols = [
             "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT",
             "LINKUSDT", "DOTUSDT", "LTCUSDT", "BCHUSDT", "TRXUSDT", "ARBUSDT", "SUIUSDT", "APTUSDT",

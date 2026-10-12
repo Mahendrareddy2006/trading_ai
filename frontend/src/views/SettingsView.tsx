@@ -224,6 +224,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* TAB 1: EXCHANGE CONNECTIONS */}
       {activeTab === 'connections' && (
         <div className="space-y-6">
+          {/* Public Data Notice */}
+          <div className="bg-gradient-to-r from-emerald-950/40 to-cyan-950/40 border border-emerald-500/30 rounded-xl p-4 flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <span className="font-bold text-emerald-300">Public Market Data & AI Predictions Active (Zero Credentials Required)</span>
+              <p className="text-slate-300 text-[11px] mt-0.5 leading-relaxed">
+                Live prices, tickers, candlestick charts, and ML model predictions are powered by Kraken built-in public market data APIs. No API keys, secrets, or exchange registration are required to view market data. Connecting a private exchange account below is strictly optional for monitoring private balances.
+              </p>
+            </div>
+          </div>
+
           {!isAuthenticated ? (
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8 text-center backdrop-blur-md">
               <Lock className="w-10 h-10 text-cyan-400 mx-auto mb-3" />
@@ -472,17 +483,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-5 backdrop-blur-md shadow-xl space-y-4">
             <h3 className="font-bold text-slate-100 text-sm tracking-wide flex items-center gap-2">
               <Globe className="w-4 h-4 text-cyan-400" />
-              <span>BINANCE USDⓈ-M FUTURES EXCHANGE LINK</span>
+              <span>PUBLIC MARKET DATA LINK (KRAKEN OFFICIAL)</span>
             </h3>
 
             <div className="space-y-3 font-mono text-xs">
               <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/60 border border-slate-800">
                 <div>
                   <span className="font-bold text-slate-200">Official Endpoint</span>
-                  <p className="text-[10px] text-slate-500">https://fapi.binance.com (Futures REST & WS)</p>
+                  <p className="text-[10px] text-slate-500">https://api.kraken.com/0/public (Public REST & WS v2)</p>
                 </div>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-400 border border-cyan-800/50">
-                  {dataStatus?.exchange_connectivity?.exchange || 'BINANCE USDⓈ-M FUTURES'}
+                  {dataStatus?.exchange_connectivity?.exchange || 'KRAKEN PUBLIC MARKET DATA'}
                 </span>
               </div>
 
@@ -492,13 +503,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div>
                     <span className="font-bold text-slate-200">Public Market Data Stream</span>
                     <p className="text-[10px] text-slate-500">
-                      20 active Perpetual pairs subscribed
+                      {dataStatus?.supported_symbols_count || dataStatus?.active_symbols?.length || 19} active Kraken Spot pairs (USDT & USD)
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800/50">
-                    {dataStatus?.exchange_connectivity?.status || 'CONNECTED'}
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    dataStatus?.exchange_connectivity?.status === 'online'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
+                      : 'bg-amber-950 text-amber-400 border border-amber-800/50'
+                  }`}>
+                    {dataStatus?.exchange_connectivity?.status?.toUpperCase() || 'ONLINE'}
                   </span>
                   {dataStatus?.exchange_connectivity?.latency_ms !== undefined && (
                     <p className="text-[10px] text-slate-400 mt-1 font-mono">
@@ -506,6 +521,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </p>
                   )}
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/60 border border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <Activity className="w-4 h-4 text-cyan-400" />
+                  <div>
+                    <span className="font-bold text-slate-200">Data Freshness & Credentials</span>
+                    <p className="text-[10px] text-slate-500">
+                      Public access: Zero credentials required • Last update: {dataStatus?.last_successful_update ? new Date(dataStatus.last_successful_update).toLocaleTimeString() : 'Live'}
+                    </p>
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  dataStatus?.data_freshness === 'live'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
+                    : 'bg-amber-950 text-amber-400 border border-amber-800/50'
+                }`}>
+                  {dataStatus?.data_freshness?.toUpperCase() || 'LIVE'}
+                </span>
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/60 border border-slate-800">

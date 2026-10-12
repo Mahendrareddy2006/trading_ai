@@ -30,12 +30,13 @@ An AI-powered cryptocurrency market analysis platform built with Python, FastAPI
 - Vite
 
 **Integrations & Infrastructure**
-- Binance USDⓈ-M Futures market data
+- Built-in Public Market Data via Kraken (Zero API keys or secrets required)
+- Optional Private Exchange Connection (Binance USDⓈ-M Futures read-only sync)
 - Telegram Bot API
 - WhatsApp Business Cloud API / supported provider integration
-- SQLite or configured database
-- Vercel (frontend deployment)
-- Render (backend deployment)
+- SQLite or configured PostgreSQL database
+- Vercel (frontend deployment: https://trading-ai-khaki.vercel.app)
+- Render (backend deployment: https://trading-ai-wjq7.onrender.com)
 
 ## 🏗️ Architecture
 

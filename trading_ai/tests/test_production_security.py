@@ -52,7 +52,7 @@ def test_20_active_symbols_configuration():
     symbols = settings.default_symbols
     assert len(symbols) >= 20, f"Expected >= 20 symbols, found {len(symbols)}"
     for s in symbols:
-        assert s.endswith("USDT"), f"Symbol {s} must be a USDT perpetual instrument"
+        assert s.endswith("USDT") or s.endswith("USD"), f"Symbol {s} must be a USDT or USD market instrument"
         assert s.isupper()
         assert len(s) >= 6
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Candle, Position, Prediction, TickerData } from '../types';
+import { Candle, CandleDetailedResponse, Position, Prediction, TickerData } from '../types';
 import { api } from '../services/api';
 import { CandlestickChart } from '../components/CandlestickChart';
 import { 
@@ -40,6 +40,7 @@ export const MarketDetailView: React.FC<MarketDetailViewProps> = ({
 }) => {
   const [timeframe, setTimeframe] = useState('1h');
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [candleMeta, setCandleMeta] = useState<CandleDetailedResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,11 +51,15 @@ export const MarketDetailView: React.FC<MarketDetailViewProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const c = await api.getCandles(symbol, timeframe, 80);
-      setCandles(c);
+      const detailed = await api.getCandlesDetailed(symbol, timeframe, 80);
+      setCandleMeta(detailed);
+      setCandles(detailed.candles || []);
+      if (detailed.warning) {
+        console.warn('Candle warning:', detailed.warning);
+      }
     } catch (e: any) {
       console.error('Error fetching candles:', e);
-      setError('Unable to fetch live candlestick history from Binance.');
+      setError(e.message || 'Unable to fetch live candlestick history from public market data provider.');
     } finally {
       setIsLoading(false);
     }
@@ -133,24 +138,26 @@ export const MarketDetailView: React.FC<MarketDetailViewProps> = ({
             </div>
           </div>
 
-          <div className="hidden sm:block">
-            <span className="text-slate-500 block text-[10px] uppercase">Mark Price</span>
-            <span className="text-slate-200">
-              ${(ticker?.mark_price || currentPrice).toLocaleString()}
+          <div>
+            <span className="text-slate-500 block text-[10px] uppercase">Quote Currency</span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-400 border border-cyan-800/50">
+              {candleMeta?.quote_asset || (symbol.endsWith('USDT') ? 'USDT' : 'USD')}
             </span>
           </div>
 
-          <div className="hidden md:block">
-            <span className="text-slate-500 block text-[10px] uppercase">Funding Rate (8h)</span>
-            <span className={(ticker?.funding_rate ?? 0) >= 0 ? 'text-cyan-400' : 'text-amber-400'}>
-              {ticker?.funding_rate !== undefined ? `${ticker.funding_rate >= 0 ? '+' : ''}${ticker.funding_rate.toFixed(4)}%` : '0.0000%'}
+          <div>
+            <span className="text-slate-500 block text-[10px] uppercase">Data Source</span>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+              candleMeta?.is_stale ? 'bg-amber-950 text-amber-400 border border-amber-800/50' : 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
+            }`}>
+              {candleMeta?.is_stale ? 'STALE' : 'KRAKEN (LIVE)'}
             </span>
           </div>
 
           <div className="hidden lg:block">
             <span className="text-slate-500 block text-[10px] uppercase">24h Volume</span>
             <span className="text-slate-200">
-              ${((ticker?.quote_volume_24h || 0) / 1_000_000).toFixed(1)}M USDT
+              ${((ticker?.quote_volume_24h || 0) / 1_000_000).toFixed(1)}M {candleMeta?.quote_asset || 'USDT'}
             </span>
           </div>
         </div>

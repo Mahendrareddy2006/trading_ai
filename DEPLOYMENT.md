@@ -95,9 +95,10 @@ Under the **Environment** tab of your Render service, add the following variable
 | `SAFE_KILL_SWITCH_ACTIVE` | `false` | Yes | Initial state of risk kill switch |
 | `INITIAL_PAPER_BALANCE` | `10000.0` | Yes | Virtual starting paper balance ($USDT) |
 
-#### Optional Channel Variables (Can also be configured via Dashboard):
+#### Public Market Data & Optional Channel Variables:
 | Variable Name | Example / Format | Purpose |
 |---|---|---|
+| `MARKET_DATA_PROVIDER` | `kraken` | Public market data provider (`kraken` default, `bybit`, or `composite`). Zero credentials needed! |
 | `TELEGRAM_BOT_TOKEN` | `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ` | Bot token from @BotFather |
 | `TELEGRAM_CHAT_ID` | `987654321` | Recipient Telegram Chat ID |
 | `TELEGRAM_ENABLED` | `true` | Enable Telegram alert channel |
@@ -105,9 +106,9 @@ Under the **Environment** tab of your Render service, add the following variable
 | `WHATSAPP_PHONE_NUMBER_ID` | `104829104820194` | Meta WhatsApp Phone Number ID |
 | `WHATSAPP_ENABLED` | `true` | Enable WhatsApp alert channel |
 | `WHATSAPP_PROVIDER` | `meta` | Messaging provider (`meta` or `twilio`) |
-| `BINANCE_API_KEY` | *(optional read-only key)* | For live futures account balance monitoring |
-| `BINANCE_API_SECRET` | *(optional read-only secret)* | For live futures account balance monitoring |
-| `BINANCE_TESTNET` | `false` | Toggle testnet vs production Binance endpoints |
+| `BINANCE_API_KEY` | *(strictly optional)* | Only for private real account balance sync; NOT needed for market data |
+| `BINANCE_API_SECRET` | *(strictly optional)* | Only for private real account balance sync; NOT needed for market data |
+| `BINANCE_TESTNET` | `false` | Toggle testnet vs production Binance endpoints for private sync |
 
 > [!NOTE]
 > Render provides a **Managed PostgreSQL** service. If you provision a Render PostgreSQL database, copy the **Internal Database URL** and set it as `DATABASE_URL`. SQLAlchemy will automatically convert `postgres://` to `postgresql://` and safely migrate missing columns on startup without deleting data.

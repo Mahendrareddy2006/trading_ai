@@ -42,8 +42,10 @@ if __name__ == "__main__":
 
     print(f"[START] Launching {settings.APP_NAME} v{settings.APP_VERSION}")
     print(f"[INFO] Serving REST API & WebSockets on http://{host}:{port}")
-    print(f"[INFO] Operating Mode: {settings.TRADING_MODE.upper()} (Kill Switch: {settings.SAFE_KILL_SWITCH_ACTIVE})")
-    print(f"[INFO] Binance Credentials Detected: {'YES (Ready)' if bool(settings.BINANCE_API_KEY) else 'NO (Paper Sandbox Mode)'}")
+    provider_name = getattr(settings, "MARKET_DATA_PROVIDER", "kraken").upper()
+    print(f"[INFO] Market Data Provider: {provider_name} (Public API • No Credentials Required)")
+    if bool(settings.BINANCE_API_KEY):
+        print(f"[INFO] Optional Exchange Account: Credentials configured for private account balance sync")
 
     uvicorn.run(
         "trading_ai.api.app:app",

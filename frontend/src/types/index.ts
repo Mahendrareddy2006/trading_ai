@@ -228,16 +228,44 @@ export interface ExchangeOrder {
   time: string;
 }
 
+export interface CandleDetailedResponse {
+  symbol: string;
+  base_asset?: string;
+  quote_asset?: string;
+  kraken_pair?: string;
+  market_type?: string;
+  timeframe: string;
+  limit: number;
+  count: number;
+  data_source: string;
+  data_freshness: string;
+  is_stale: boolean;
+  last_updated?: string;
+  warning?: string | null;
+  error?: string | null;
+  candles: Candle[];
+}
+
 export interface SystemDataStatus {
   exchange_connectivity: {
     status: string;
     latency_ms: number;
     exchange: string;
+    provider?: string;
+    endpoint?: string;
+    credentials_required?: boolean;
     testnet: boolean;
     last_checked: string;
   };
+  public_data_source?: string;
+  public_data_active?: boolean;
+  credentials_required?: boolean;
   credentials_configured: boolean;
+  private_exchange_configured?: boolean;
+  data_freshness?: string;
+  last_successful_update?: string;
   active_symbols: string[];
+  supported_symbols_count?: number;
   live_prices_cached: number;
   testnet: boolean;
   server_time_offset_ms: number;
