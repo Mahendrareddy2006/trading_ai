@@ -136,11 +136,19 @@ async def live_trading_loop():
             # 1. Fetch real-time ticker data from public market provider
             real_tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
             for symbol in settings.default_symbols:
-                if symbol in real_tickers:
-                    t_info = real_tickers[symbol]
-                    current_price = t_info["price"]
-                    live_prices[symbol] = current_price
+                t_info = real_tickers.get(symbol)
+                quote_valid = t_info.get("quote_valid", True) if t_info else True
+
+                if t_info:
                     live_ticker_stats[symbol] = t_info
+                    if quote_valid:
+                        current_price = t_info["price"]
+                        live_prices[symbol] = current_price
+                    elif symbol in live_prices:
+                        current_price = live_prices[symbol]
+                    else:
+                        live_candles = data_manager.get_live_candles(symbol, "1h", limit=3)
+                        current_price = float(live_candles[-1]["close"]) if live_candles else 100.0
                 elif symbol in live_prices:
                     current_price = live_prices[symbol]
                 else:
@@ -148,44 +156,51 @@ async def live_trading_loop():
                     current_price = float(live_candles[-1]["close"]) if live_candles else 100.0
                     live_prices[symbol] = current_price
 
-                # 2. Update paper engine positions with real current price
-                paper_engine.on_price_update(symbol, current_price)
+                # Skip paper trade execution if quote is invalid or crossed
+                if not quote_valid:
+                    logger.warning(f"Skipping trade execution on invalid/crossed quote for {symbol}: {t_info.get('quote_error') if t_info else 'Invalid quote'}")
+                else:
+                    # 2. Update paper engine positions with real current price
+                    paper_engine.on_price_update(symbol, current_price, quote_valid=quote_valid)
 
-                # 2b. Evaluate Price-Range & Price-Crossing Alerts
-                try:
-                    db_sess = SessionLocal()
-                    notification_service.evaluate_price_alerts(db_sess, symbol, current_price)
-                    db_sess.close()
-                except Exception as e:
-                    logger.debug(f"Error evaluating price alerts for {symbol}: {e}")
+                    # 2b. Evaluate Price-Range & Price-Crossing Alerts
+                    try:
+                        db_sess = SessionLocal()
+                        notification_service.evaluate_price_alerts(db_sess, symbol, current_price)
+                        db_sess.close()
+                    except Exception as e:
+                        logger.debug(f"Error evaluating price alerts for {symbol}: {e}")
 
-                # 3. Evaluate Strategy with live candles if flat
-                if symbol not in paper_engine.positions:
-                    candles_1h = data_manager.get_live_candles(symbol, "1h", limit=100)
-                    if candles_1h and len(candles_1h) >= 40:
-                        candles_5m = data_manager.get_live_candles(symbol, "5m", limit=100)
-                        candles_dict = {"1h": candles_1h, "5m": candles_5m}
+                    # 3. Evaluate Strategy with live candles if flat
+                    if symbol not in paper_engine.positions:
+                        candles_1h = data_manager.get_live_candles(symbol, "1h", limit=100)
+                        if candles_1h and len(candles_1h) >= 40:
+                            candles_5m = data_manager.get_live_candles(symbol, "5m", limit=100)
+                            candles_dict = {"1h": candles_1h, "5m": candles_5m}
 
-                        decision = ml_strategy.evaluate(symbol, candles_dict)
+                            decision = ml_strategy.evaluate(symbol, candles_dict)
 
-                        if decision.action in ["BUY", "SELL"]:
-                            valid, qty, reason = risk_engine.validate_trade_order(
-                                symbol=symbol,
-                                side="LONG" if decision.action == "BUY" else "SHORT",
-                                price=current_price,
-                                stop_loss_pct=decision.stop_loss_pct,
-                                current_equity=paper_engine.equity,
-                                open_positions=paper_engine.get_open_positions_list()
-                            )
-                            if valid and qty > 0:
-                                paper_engine.open_position(
+                            if decision.action in ["BUY", "SELL"]:
+                                valid, qty, reason = risk_engine.validate_trade_order(
                                     symbol=symbol,
                                     side="LONG" if decision.action == "BUY" else "SHORT",
-                                    entry_price=current_price,
-                                    quantity=qty,
+                                    price=current_price,
                                     stop_loss_pct=decision.stop_loss_pct,
-                                    take_profit_pct=decision.take_profit_pct
+                                    current_equity=paper_engine.equity,
+                                    open_positions=paper_engine.get_open_positions_list()
                                 )
+                                if valid and qty > 0:
+                                    paper_engine.open_position(
+                                        symbol=symbol,
+                                        side="LONG" if decision.action == "BUY" else "SHORT",
+                                        entry_price=current_price,
+                                        quantity=qty,
+                                        stop_loss_pct=decision.stop_loss_pct,
+                                        take_profit_pct=decision.take_profit_pct,
+                                        bid_price=t_info.get("bid_price") if t_info else None,
+                                        ask_price=t_info.get("ask_price") if t_info else None,
+                                        quote_valid=quote_valid
+                                    )
 
                 # 4. Broadcast Real Live Tick Event over WebSocket
                 t_stat = live_ticker_stats.get(symbol, {})
@@ -200,16 +215,21 @@ async def live_trading_loop():
                     "volume_24h": t_stat.get("volume_24h", 0.0),
                     "quote_volume_24h": t_stat.get("quote_volume_24h", 0.0),
                     "mark_price": t_stat.get("mark_price", current_price),
+                    "midpoint": t_stat.get("midpoint", current_price),
                     "funding_rate": t_stat.get("funding_rate", 0.0),
                     "bid_price": t_stat.get("bid_price", current_price),
                     "ask_price": t_stat.get("ask_price", current_price),
                     "spread": t_stat.get("spread", 0.0),
+                    "spread_pct": t_stat.get("spread_pct", 0.0),
+                    "quote_valid": quote_valid,
+                    "quote_error": t_stat.get("quote_error"),
                     "equity": round(paper_engine.equity, 2),
                     "cash": round(paper_engine.cash, 2),
                     "unrealized_pnl": round(paper_engine.unrealized_pnl, 2),
                     "open_positions": len(paper_engine.positions),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "is_stale": False
+                    "data_freshness": t_stat.get("data_freshness", "live" if quote_valid else "invalid_quote"),
+                    "is_stale": t_stat.get("is_stale", not quote_valid)
                 })
 
             await asyncio.sleep(2)
@@ -316,7 +336,8 @@ def get_market_tickers():
     tickers = data_manager.fetch_realtime_tickers(settings.default_symbols)
     for sym, t in tickers.items():
         live_ticker_stats[sym] = t
-        live_prices[sym] = t["price"]
+        if t.get("quote_valid", True) and t.get("price", 0) > 0:
+            live_prices[sym] = t["price"]
     return {
         "tickers": live_ticker_stats,
         "count": len(live_ticker_stats),

@@ -9,6 +9,7 @@ Simulates exchange matching and position management:
 """
 
 from datetime import datetime, timezone
+import math
 import uuid
 from typing import Any, Dict, List, Optional
 from trading_ai.config.settings import settings
@@ -60,15 +61,45 @@ class PaperExecutionEngine:
         take_profit_pct: float,
         leverage: int = settings.DEFAULT_LEVERAGE,
         strategy_name: str = "ML_Strategy",
-        model_version: str = "v1.0"
+        model_version: str = "v1.0",
+        bid_price: Optional[float] = None,
+        ask_price: Optional[float] = None,
+        quote_valid: Optional[bool] = None
     ) -> Optional[Dict[str, Any]]:
         """Simulates opening a new leveraged position with protective orders."""
+        if quote_valid is False:
+            logger.warning(f"Refusing to open paper position for {symbol}: quote flagged as invalid.")
+            return None
+
+        if entry_price is None or entry_price <= 0 or math.isnan(entry_price) or math.isinf(entry_price):
+            logger.warning(f"Invalid entry_price ({entry_price}) for {symbol}. Order rejected.")
+            return None
+
+        if ask_price is not None and bid_price is not None:
+            if math.isnan(bid_price) or math.isnan(ask_price) or math.isinf(bid_price) or math.isinf(ask_price):
+                logger.warning(f"Refusing order for {symbol} due to non-finite quotes: bid={bid_price}, ask={ask_price}")
+                return None
+            if ask_price <= 0 or bid_price <= 0:
+                logger.warning(f"Refusing order for {symbol} due to non-positive quotes: bid={bid_price}, ask={ask_price}")
+                return None
+            if ask_price < bid_price:
+                logger.warning(f"Refusing order on crossed quotes for {symbol}: ask={ask_price} < bid={bid_price}")
+                return None
+
         if symbol in self.positions:
             logger.warning(f"Position already open for {symbol}. Rejecting open_position.")
             return None
 
+        # Determine execution base price: buy at ask, sell at bid, or fallback to entry_price
+        if side == "LONG" and ask_price is not None and ask_price > 0:
+            exec_base = ask_price
+        elif side == "SHORT" and bid_price is not None and bid_price > 0:
+            exec_base = bid_price
+        else:
+            exec_base = entry_price
+
         # Apply slippage on entry
-        fill_price = entry_price * (1 + self.slippage_pct) if side == "LONG" else entry_price * (1 - self.slippage_pct)
+        fill_price = exec_base * (1 + self.slippage_pct) if side == "LONG" else exec_base * (1 - self.slippage_pct)
 
         notional = fill_price * quantity
         fee = notional * self.taker_fee_pct
@@ -131,9 +162,31 @@ class PaperExecutionEngine:
         self,
         symbol: str,
         exit_price: float,
-        reason: str = "MANUAL"
+        reason: str = "MANUAL",
+        bid_price: Optional[float] = None,
+        ask_price: Optional[float] = None,
+        quote_valid: Optional[bool] = None
     ) -> Optional[Dict[str, Any]]:
         """Closes an active position, applies exit fees, updates cash and risk stats."""
+        if quote_valid is False:
+            logger.warning(f"Refusing to close paper position for {symbol}: quote flagged as invalid.")
+            return None
+
+        if exit_price is None or exit_price <= 0 or math.isnan(exit_price) or math.isinf(exit_price):
+            logger.warning(f"Invalid exit_price ({exit_price}) for {symbol}. Order close rejected.")
+            return None
+
+        if ask_price is not None and bid_price is not None:
+            if math.isnan(bid_price) or math.isnan(ask_price) or math.isinf(bid_price) or math.isinf(ask_price):
+                logger.warning(f"Refusing to close position for {symbol} due to non-finite quotes: bid={bid_price}, ask={ask_price}")
+                return None
+            if ask_price <= 0 or bid_price <= 0:
+                logger.warning(f"Refusing to close position for {symbol} due to non-positive quotes: bid={bid_price}, ask={ask_price}")
+                return None
+            if ask_price < bid_price:
+                logger.warning(f"Refusing to close position on crossed quotes for {symbol}: ask={ask_price} < bid={bid_price}")
+                return None
+
         if symbol not in self.positions:
             return None
 
@@ -142,8 +195,16 @@ class PaperExecutionEngine:
         qty = pos["quantity"]
         entry = pos["entry_price"]
 
+        # When closing LONG, sell at bid; when closing SHORT, buy at ask
+        if side == "LONG" and bid_price is not None and bid_price > 0:
+            exec_base = bid_price
+        elif side == "SHORT" and ask_price is not None and ask_price > 0:
+            exec_base = ask_price
+        else:
+            exec_base = exit_price
+
         # Apply slippage on exit
-        fill_price = exit_price * (1 - self.slippage_pct) if side == "LONG" else exit_price * (1 + self.slippage_pct)
+        fill_price = exec_base * (1 - self.slippage_pct) if side == "LONG" else exec_base * (1 + self.slippage_pct)
         exit_notional = fill_price * qty
         exit_fee = exit_notional * self.taker_fee_pct
 
@@ -224,9 +285,17 @@ class PaperExecutionEngine:
         symbol: str,
         current_price: float,
         high: Optional[float] = None,
-        low: Optional[float] = None
+        low: Optional[float] = None,
+        quote_valid: Optional[bool] = True
     ) -> Optional[Dict[str, Any]]:
         """Non-blocking tick check for SL / TP triggers and unrealized PnL updates."""
+        if quote_valid is False:
+            return None
+
+        if current_price is None or current_price <= 0 or math.isnan(current_price) or math.isinf(current_price):
+            logger.warning(f"Invalid current_price ({current_price}) for {symbol}. Ignoring update.")
+            return None
+
         if symbol not in self.positions:
             return None
 

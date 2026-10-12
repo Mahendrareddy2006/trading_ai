@@ -21,10 +21,15 @@ export interface TickerData {
   volume_24h: number;
   quote_volume_24h?: number;
   mark_price?: number;
+  midpoint?: number;
   funding_rate?: number;
   bid_price?: number;
   ask_price?: number;
   spread?: number;
+  spread_pct?: number;
+  quote_valid?: boolean;
+  quote_error?: string | null;
+  data_freshness?: string;
   timestamp?: string;
   is_stale?: boolean;
 }

@@ -10,6 +10,7 @@ Integrates Kraken's official public REST API and WebSocket v2 endpoints:
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 import requests
@@ -300,6 +301,132 @@ class KrakenMarketDataProvider(BaseMarketDataProvider):
     # Tickers
     # =========================================================================
 
+    def parse_ticker_item(
+        self,
+        std_sym: str,
+        k_key: str,
+        item: Dict[str, Any],
+        timestamp_iso: str
+    ) -> Dict[str, Any]:
+        """Parses a single Kraken ticker item payload with strict bid/ask and spread validations.
+        
+        Kraken official Ticker payload format:
+        - 'a': Ask [<price>, <whole lot volume>, <lot volume>]
+        - 'b': Bid [<price>, <whole lot volume>, <lot volume>]
+        - 'c': Last trade closed [<price>, <lot volume>]
+        - 'v': Volume [<today>, <last 24 hours>]
+        - 'p': Volume weighted average price [<today>, <last 24 hours>]
+        - 't': Number of trades [<today>, <last 24 hours>]
+        - 'l': Low [<today>, <last 24 hours>]
+        - 'h': High [<today>, <last 24 hours>]
+        - 'o': Today's opening price
+        """
+        sym_info = self.get_symbol_info(std_sym)
+        base_asset = sym_info.base_asset if sym_info else (std_sym[:-4] if std_sym.endswith("USDT") else std_sym[:3])
+        quote_asset = sym_info.quote_asset if sym_info else ("USDT" if std_sym.endswith("USDT") else "USD")
+
+        try:
+            # 1. Parse raw prices without premature rounding
+            last_price = float(item["c"][0])
+            open_price = float(item.get("o", last_price))
+            high_price = float(item["h"][1])
+            low_price = float(item["l"][1])
+            vol_base = float(item["v"][1])
+            vwap = float(item["p"][1]) if float(item["p"][1]) > 0 else last_price
+            vol_quote = vol_base * vwap
+
+            # 2. Extract best ask from 'a' and best bid from 'b' (Kraken official spec)
+            # Never swap values to make an invalid quote look valid!
+            ask_price = float(item["a"][0])
+            bid_price = float(item["b"][0])
+
+            # 3. Validate quotes & calculate spread without premature rounding
+            quote_valid = True
+            quote_error = None
+
+            if math.isnan(bid_price) or math.isnan(ask_price) or math.isinf(bid_price) or math.isinf(ask_price):
+                quote_valid = False
+                quote_error = f"Non-finite quote values: bid={bid_price}, ask={ask_price}"
+                logger.warning(f"Invalid market quote for {std_sym} ({k_key}): {quote_error}")
+            elif bid_price <= 0 or ask_price <= 0:
+                quote_valid = False
+                quote_error = f"Non-positive quote values: bid={bid_price}, ask={ask_price}"
+                logger.warning(f"Invalid market quote for {std_sym} ({k_key}): {quote_error}")
+            elif ask_price < bid_price:
+                # Crossed market quote from upstream source
+                quote_valid = False
+                quote_error = f"Crossed quote from upstream source: ask ({ask_price}) < bid ({bid_price})"
+                logger.warning(f"Crossed market quote for {std_sym} ({k_key}): {quote_error}")
+
+            if quote_valid:
+                spread = ask_price - bid_price
+                midpoint = (ask_price + bid_price) / 2.0
+                spread_pct = ((ask_price - bid_price) / midpoint * 100.0) if midpoint > 0 else 0.0
+            else:
+                spread = 0.0
+                spread_pct = 0.0
+                midpoint = last_price
+
+            change_abs = last_price - open_price
+            change_pct = ((last_price - open_price) / open_price * 100.0) if open_price > 0 else 0.0
+
+            return {
+                "symbol": std_sym,
+                "base_asset": base_asset,
+                "quote_asset": quote_asset,
+                "kraken_pair": k_key,
+                "market_type": "Spot (Kraken Public)",
+                "price": last_price,
+                "change_24h": round(change_pct, 4),
+                "change_24h_abs": round(change_abs, 8),
+                "high_24h": high_price,
+                "low_24h": low_price,
+                "volume_24h": round(vol_base, 4),
+                "quote_volume_24h": round(vol_quote, 2),
+                "mark_price": round(midpoint, 8) if quote_valid else last_price,
+                "midpoint": round(midpoint, 8),
+                "funding_rate": 0.0,
+                "bid_price": bid_price,
+                "ask_price": ask_price,
+                "spread": round(spread, 8),
+                "spread_pct": round(spread_pct, 4),
+                "quote_valid": quote_valid,
+                "quote_error": quote_error,
+                "timestamp": timestamp_iso,
+                "data_source": "kraken_public",
+                "data_freshness": "live" if quote_valid else "invalid_quote",
+                "is_stale": not quote_valid
+            }
+        except (KeyError, ValueError, IndexError, TypeError) as parse_err:
+            logger.warning(f"Malformed Kraken ticker item for {k_key}: {parse_err}")
+            return {
+                "symbol": std_sym,
+                "base_asset": base_asset,
+                "quote_asset": quote_asset,
+                "kraken_pair": k_key,
+                "market_type": "Spot (Kraken Public)",
+                "price": 0.0,
+                "change_24h": 0.0,
+                "change_24h_abs": 0.0,
+                "high_24h": 0.0,
+                "low_24h": 0.0,
+                "volume_24h": 0.0,
+                "quote_volume_24h": 0.0,
+                "mark_price": 0.0,
+                "midpoint": 0.0,
+                "funding_rate": 0.0,
+                "bid_price": 0.0,
+                "ask_price": 0.0,
+                "spread": 0.0,
+                "spread_pct": 0.0,
+                "quote_valid": False,
+                "quote_error": f"Malformed payload from upstream: {parse_err}",
+                "timestamp": timestamp_iso,
+                "data_source": "kraken_public",
+                "data_freshness": "malformed_quote",
+                "is_stale": True
+            }
+
     def fetch_tickers(self, symbols: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """Fetches real-time ticker statistics from Kraken's public Ticker endpoint."""
         now = time.time()
@@ -340,54 +467,9 @@ class KrakenMarketDataProvider(BaseMarketDataProvider):
                 result = body.get("result", {})
                 for k_key, item in result.items():
                     std_sym = pair_to_std.get(k_key) or self.map_kraken_to_symbol(k_key)
-                    sym_info = self.get_symbol_info(std_sym)
-
-                    base_asset = sym_info.base_asset if sym_info else (std_sym[:-4] if std_sym.endswith("USDT") else std_sym[:3])
-                    quote_asset = sym_info.quote_asset if sym_info else ("USDT" if std_sym.endswith("USDT") else "USD")
-
-                    try:
-                        last_price = float(item["c"][0])
-                        open_price = float(item.get("o", last_price))
-                        high_price = float(item["h"][1])  # 24h high
-                        low_price = float(item["l"][1])   # 24h low
-                        vol_base = round(float(item["v"][1]), 4)  # 24h volume in base asset
-                        vwap = float(item["p"][1]) if float(item["p"][1]) > 0 else last_price
-                        vol_quote = round(vol_base * vwap, 2)
-
-                        bid_price = float(item["a"][0])
-                        ask_price = float(item["b"][0])
-                        spread = round(abs(bid_price - ask_price), 4)
-
-                        change_abs = round(last_price - open_price, 4)
-                        change_pct = round(((last_price - open_price) / open_price * 100.0), 2) if open_price > 0 else 0.0
-
-                        ticker_entry = {
-                            "symbol": std_sym,
-                            "base_asset": base_asset,
-                            "quote_asset": quote_asset,
-                            "kraken_pair": k_key,
-                            "market_type": "Spot (Kraken Public)",
-                            "price": last_price,
-                            "change_24h": change_pct,
-                            "change_24h_abs": change_abs,
-                            "high_24h": high_price,
-                            "low_24h": low_price,
-                            "volume_24h": vol_base,
-                            "quote_volume_24h": vol_quote,
-                            "mark_price": last_price,
-                            "funding_rate": 0.0,
-                            "bid_price": bid_price,
-                            "ask_price": ask_price,
-                            "spread": spread,
-                            "timestamp": now_iso,
-                            "data_source": "kraken_public",
-                            "data_freshness": "live",
-                            "is_stale": False
-                        }
-                        out[std_sym] = ticker_entry
-                        self._ticker_cache[std_sym] = ticker_entry
-                    except (KeyError, ValueError, IndexError) as parse_err:
-                        logger.debug(f"Error parsing Kraken ticker for {k_key}: {parse_err}")
+                    ticker_entry = self.parse_ticker_item(std_sym, k_key, item, now_iso)
+                    out[std_sym] = ticker_entry
+                    self._ticker_cache[std_sym] = ticker_entry
 
                 self._ticker_cache_time = now
                 self._last_successful_update = now_iso

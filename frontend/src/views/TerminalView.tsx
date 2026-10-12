@@ -97,6 +97,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       bid_price: t.bid_price || t.price || 0,
       ask_price: t.ask_price || t.price || 0,
       spread: t.spread || 0,
+      spread_pct: t.spread_pct,
+      midpoint: t.midpoint,
+      quote_valid: t.quote_valid,
+      quote_error: t.quote_error,
+      data_freshness: t.data_freshness,
       timestamp: t.timestamp || new Date().toISOString(),
       is_stale: t.is_stale || false
     }));
@@ -418,7 +423,27 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
                       {/* Spread */}
                       <td className="py-3.5 px-4 text-right text-slate-400 text-[11px]">
-                        ${t.spread.toFixed(2)}
+                        {t.quote_valid === false ? (
+                          <span className="text-rose-400 font-semibold inline-flex items-center gap-1" title={t.quote_error || 'Invalid quote'}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                            Invalid
+                          </span>
+                        ) : (
+                          <div className="flex flex-col items-end">
+                            <span className="text-slate-300">
+                              ${t.spread > 0 && t.spread < 0.0001
+                                ? t.spread.toFixed(6)
+                                : t.spread > 0 && t.spread < 0.01
+                                ? t.spread.toFixed(4)
+                                : t.spread.toFixed(2)}
+                            </span>
+                            {t.spread_pct !== undefined && t.spread_pct !== null && (
+                              <span className="text-[10px] text-slate-500">
+                                {t.spread_pct.toFixed(3)}%
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Action */}

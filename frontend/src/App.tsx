@@ -155,10 +155,15 @@ function MainApp() {
               volume_24h: event.volume_24h ?? prev[event.symbol]?.volume_24h ?? 0,
               quote_volume_24h: event.quote_volume_24h ?? prev[event.symbol]?.quote_volume_24h ?? 0,
               mark_price: event.mark_price ?? prev[event.symbol]?.mark_price ?? event.price,
+              midpoint: event.midpoint ?? prev[event.symbol]?.midpoint,
               funding_rate: event.funding_rate ?? prev[event.symbol]?.funding_rate ?? 0,
               bid_price: event.bid_price ?? prev[event.symbol]?.bid_price ?? event.price,
               ask_price: event.ask_price ?? prev[event.symbol]?.ask_price ?? event.price,
               spread: event.spread ?? prev[event.symbol]?.spread ?? 0,
+              spread_pct: event.spread_pct ?? prev[event.symbol]?.spread_pct,
+              quote_valid: event.quote_valid ?? prev[event.symbol]?.quote_valid ?? true,
+              quote_error: event.quote_error ?? prev[event.symbol]?.quote_error,
+              data_freshness: event.data_freshness ?? prev[event.symbol]?.data_freshness,
               timestamp: event.timestamp || new Date().toISOString(),
               is_stale: event.is_stale ?? false
             }

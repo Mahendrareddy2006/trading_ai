@@ -23,6 +23,7 @@ from trading_ai.config.settings import settings
 from trading_ai.data.providers.kraken import KrakenMarketDataProvider, SUPPORTED_KRAKEN_PAIRS
 from trading_ai.data.providers.manager import CompositeMarketDataProvider, market_data_provider
 from trading_ai.data.manager import data_manager
+from trading_ai.execution.paper import PaperExecutionEngine
 from trading_ai.features.pipeline import feature_pipeline, FEATURE_COLUMNS
 from trading_ai.inference.predictor import model_predictor
 
@@ -152,16 +153,349 @@ def test_kraken_ticker_parsing_mocked(monkeypatch):
     assert t["base_asset"] == "BTC"
     assert t["quote_asset"] == "USDT"
     assert t["price"] == 65100.20
-    assert t["bid_price"] == 65100.50
-    assert t["ask_price"] == 65100.00
+    # Kraken: 'a' is ask, 'b' is bid. Bid <= Ask in normal quote
+    assert t["bid_price"] == 65100.00
+    assert t["ask_price"] == 65100.50
     assert t["high_24h"] == 65600.00
     assert t["low_24h"] == 63800.00
     assert t["volume_24h"] == 350.25
     assert t["quote_volume_24h"] == round(350.25 * 64850.00, 2)
     assert t["spread"] == 0.50
+    assert t["midpoint"] == 65100.25
+    assert t["spread_pct"] == round(((65100.50 - 65100.00) / 65100.25) * 100.0, 4)
+    assert t["quote_valid"] is True
+    assert t["quote_error"] is None
     assert t["change_24h"] > 0
     assert t["data_source"] == "kraken_public"
     assert t["is_stale"] is False
+
+
+def test_normal_quotes_spread_calculation_and_low_priced_precision(monkeypatch):
+    """Verifies unrounded spread calculation and precision preservation for low-priced assets like ADA."""
+    provider = KrakenMarketDataProvider()
+
+    # ADA with micro-cent spread: bid = 0.254082, ask = 0.254083
+    mock_ada = {
+        "error": [],
+        "result": {
+            "ADAUSDT": {
+                "a": ["0.254083", "5000", "5000.0"],
+                "b": ["0.254082", "8000", "8000.0"],
+                "c": ["0.2540825", "100.0"],
+                "v": ["10000.0", "50000.0"],
+                "p": ["0.25000", "0.25200"],
+                "t": [100, 500],
+                "l": ["0.24500", "0.24000"],
+                "h": ["0.26000", "0.26500"],
+                "o": "0.25000"
+            }
+        }
+    }
+
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return mock_ada
+
+    monkeypatch.setattr("requests.get", lambda url, params=None, timeout=None: MockResp())
+    provider._ticker_cache.clear()
+    provider._ticker_cache_time = 0.0
+
+    tickers = provider.fetch_tickers(["ADAUSDT"])
+    assert "ADAUSDT" in tickers
+    ada = tickers["ADAUSDT"]
+
+    assert ada["bid_price"] == 0.254082
+    assert ada["ask_price"] == 0.254083
+    # Absolute spread must be exactly 0.000001 (not collapsed to 0 by premature rounding)
+    assert ada["spread"] == 0.000001
+    expected_midpoint = (0.254083 + 0.254082) / 2.0
+    assert ada["midpoint"] == round(expected_midpoint, 8)
+    expected_pct = ((0.254083 - 0.254082) / expected_midpoint) * 100.0
+    assert ada["spread_pct"] == round(expected_pct, 4)
+    assert ada["quote_valid"] is True
+    assert ada["quote_error"] is None
+    assert ada["is_stale"] is False
+
+
+def test_crossed_quotes_detection_and_flagging(monkeypatch):
+    """Verifies that crossed quotes (ask < bid) from upstream are flagged invalid and never silently swapped."""
+    provider = KrakenMarketDataProvider()
+
+    # Upstream anomaly: ask = 0.254082, bid = 0.254083
+    mock_crossed = {
+        "error": [],
+        "result": {
+            "ADAUSDT": {
+                "a": ["0.254082", "5000", "5000.0"],
+                "b": ["0.254083", "8000", "8000.0"],
+                "c": ["0.254082", "100.0"],
+                "v": ["10000.0", "50000.0"],
+                "p": ["0.25000", "0.25200"],
+                "t": [100, 500],
+                "l": ["0.24500", "0.24000"],
+                "h": ["0.26000", "0.26500"],
+                "o": "0.25000"
+            }
+        }
+    }
+
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return mock_crossed
+
+    monkeypatch.setattr("requests.get", lambda url, params=None, timeout=None: MockResp())
+    provider._ticker_cache.clear()
+    provider._ticker_cache_time = 0.0
+
+    tickers = provider.fetch_tickers(["ADAUSDT"])
+    ada = tickers["ADAUSDT"]
+
+    # Must preserve actual reported values without fraudulent swapping
+    assert ada["bid_price"] == 0.254083
+    assert ada["ask_price"] == 0.254082
+    # Must flag as invalid quote
+    assert ada["quote_valid"] is False
+    assert ada["quote_error"] is not None
+    assert "Crossed quote" in ada["quote_error"]
+    assert ada["data_freshness"] == "invalid_quote"
+    assert ada["is_stale"] is True
+
+
+def test_zero_and_negative_quotes_rejection(monkeypatch):
+    """Verifies that non-positive or non-finite quote values are rejected and marked invalid."""
+    provider = KrakenMarketDataProvider()
+
+    # Zero bid price
+    mock_zero = {
+        "error": [],
+        "result": {
+            "BTCUSDT": {
+                "a": ["65000.0", "1", "1"],
+                "b": ["0.0", "1", "1"],
+                "c": ["65000.0", "1"],
+                "v": ["10", "20"],
+                "p": ["65000", "65000"],
+                "t": [1, 2],
+                "l": ["64000", "64000"],
+                "h": ["66000", "66000"],
+                "o": "65000"
+            }
+        }
+    }
+
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return mock_zero
+
+    monkeypatch.setattr("requests.get", lambda url, params=None, timeout=None: MockResp())
+    provider._ticker_cache.clear()
+    provider._ticker_cache_time = 0.0
+
+    tickers = provider.fetch_tickers(["BTCUSDT"])
+    btc = tickers["BTCUSDT"]
+
+    assert btc["quote_valid"] is False
+    assert btc["quote_error"] is not None
+    assert "Non-positive" in btc["quote_error"]
+    assert btc["is_stale"] is True
+
+
+def test_malformed_kraken_payload_handling(monkeypatch):
+    """Verifies that malformed payloads with missing fields or corrupt arrays do not crash."""
+    provider = KrakenMarketDataProvider()
+
+    mock_malformed = {
+        "error": [],
+        "result": {
+            "BTCUSDT": {
+                "c": ["65000.0", "1"]
+                # Missing 'a', 'b', 'h', 'l', etc.
+            }
+        }
+    }
+
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return mock_malformed
+
+    monkeypatch.setattr("requests.get", lambda url, params=None, timeout=None: MockResp())
+    provider._ticker_cache.clear()
+    provider._ticker_cache_time = 0.0
+
+    tickers = provider.fetch_tickers(["BTCUSDT"])
+    btc = tickers["BTCUSDT"]
+
+    assert btc["quote_valid"] is False
+    assert btc["quote_error"] is not None
+    assert "Malformed" in btc["quote_error"]
+    assert btc["data_freshness"] == "malformed_quote"
+    assert btc["is_stale"] is True
+
+
+def test_usdt_versus_usd_pairs_ticker_parsing(monkeypatch):
+    """Verifies distinct parsing and quote currency isolation between USDT and USD pairs."""
+    provider = KrakenMarketDataProvider()
+
+    mock_pairs = {
+        "error": [],
+        "result": {
+            "XBTUSDT": {
+                "a": ["65100.5", "1", "1"],
+                "b": ["65100.0", "1", "1"],
+                "c": ["65100.2", "1"],
+                "v": ["10", "20"],
+                "p": ["65000", "65000"],
+                "t": [1, 2],
+                "l": ["64000", "64000"],
+                "h": ["66000", "66000"],
+                "o": "65000"
+            },
+            "XXBTZUSD": {
+                "a": ["65080.5", "2", "2"],
+                "b": ["65080.0", "2", "2"],
+                "c": ["65080.2", "1"],
+                "v": ["15", "30"],
+                "p": ["65050", "65050"],
+                "t": [5, 10],
+                "l": ["64000", "64000"],
+                "h": ["66000", "66000"],
+                "o": "65000"
+            }
+        }
+    }
+
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return mock_pairs
+
+    monkeypatch.setattr("requests.get", lambda url, params=None, timeout=None: MockResp())
+    provider._ticker_cache.clear()
+    provider._ticker_cache_time = 0.0
+
+    tickers = provider.fetch_tickers(["BTCUSDT", "BTCUSD"])
+    assert "BTCUSDT" in tickers
+    assert "BTCUSD" in tickers
+
+    btc_usdt = tickers["BTCUSDT"]
+    btc_usd = tickers["BTCUSD"]
+
+    assert btc_usdt["quote_asset"] == "USDT"
+    assert btc_usdt["ask_price"] == 65100.5
+    assert btc_usdt["bid_price"] == 65100.0
+
+    assert btc_usd["quote_asset"] == "USD"
+    assert btc_usd["ask_price"] == 65080.5
+    assert btc_usd["bid_price"] == 65080.0
+
+
+def test_paper_engine_rejects_invalid_and_crossed_quotes():
+    """Verifies that the paper-trading engine refuses to open or close simulated positions on invalid quotes."""
+    engine = PaperExecutionEngine()
+
+    # 1. Rejects open_position when quote_valid is False
+    res_invalid = engine.open_position(
+        symbol="BTCUSDT",
+        side="LONG",
+        entry_price=65000.0,
+        quantity=0.1,
+        stop_loss_pct=0.02,
+        take_profit_pct=0.04,
+        bid_price=64990.0,
+        ask_price=65010.0,
+        quote_valid=False
+    )
+    assert res_invalid is None
+    assert "BTCUSDT" not in engine.positions
+
+    # 2. Rejects open_position on crossed quotes (ask < bid)
+    res_crossed = engine.open_position(
+        symbol="BTCUSDT",
+        side="LONG",
+        entry_price=65000.0,
+        quantity=0.1,
+        stop_loss_pct=0.02,
+        take_profit_pct=0.04,
+        bid_price=65100.0,
+        ask_price=65000.0,
+        quote_valid=True
+    )
+    assert res_crossed is None
+    assert "BTCUSDT" not in engine.positions
+
+    # 3. Rejects open_position on non-positive or non-finite quotes
+    res_zero = engine.open_position(
+        symbol="BTCUSDT",
+        side="LONG",
+        entry_price=65000.0,
+        quantity=0.1,
+        stop_loss_pct=0.02,
+        take_profit_pct=0.04,
+        bid_price=0.0,
+        ask_price=65000.0,
+        quote_valid=True
+    )
+    assert res_zero is None
+    assert "BTCUSDT" not in engine.positions
+
+    # 4. Successfully opens position on valid quotes and uses ask for LONG
+    res_valid_long = engine.open_position(
+        symbol="BTCUSDT",
+        side="LONG",
+        entry_price=65000.0,
+        quantity=0.1,
+        stop_loss_pct=0.02,
+        take_profit_pct=0.04,
+        bid_price=64990.0,
+        ask_price=65010.0,
+        quote_valid=True
+    )
+    assert res_valid_long is not None
+    assert "BTCUSDT" in engine.positions
+    # LONG executed at ask * (1 + slippage)
+    expected_fill = 65010.0 * (1 + engine.slippage_pct)
+    assert abs(res_valid_long["entry_price"] - expected_fill) < 1e-4
+
+    # 5. Rejects close_position when quote_valid is False
+    res_close_invalid = engine.close_position(
+        symbol="BTCUSDT",
+        exit_price=66000.0,
+        quote_valid=False
+    )
+    assert res_close_invalid is None
+    assert "BTCUSDT" in engine.positions
+
+    # 6. Rejects close_position on crossed quotes
+    res_close_crossed = engine.close_position(
+        symbol="BTCUSDT",
+        exit_price=66000.0,
+        bid_price=66100.0,
+        ask_price=66000.0,
+        quote_valid=True
+    )
+    assert res_close_crossed is None
+    assert "BTCUSDT" in engine.positions
+
+    # 7. Successfully closes on valid quotes (closing LONG sells at bid)
+    res_close_valid = engine.close_position(
+        symbol="BTCUSDT",
+        exit_price=66000.0,
+        bid_price=66000.0,
+        ask_price=66010.0,
+        quote_valid=True
+    )
+    assert res_close_valid is not None
+    assert "BTCUSDT" not in engine.positions
+    expected_exit = 66000.0 * (1 - engine.slippage_pct)
+    assert abs(res_close_valid["exit_price"] - expected_exit) < 1e-4
+
+    # 8. on_price_update returns None when quote_valid is False
+    assert engine.on_price_update("BTCUSDT", 66000.0, quote_valid=False) is None
+
 
 
 def test_kraken_candle_parsing_and_limit_slicing(monkeypatch):
